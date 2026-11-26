@@ -98,7 +98,7 @@ namespace DeskMate
         void ShowPose(BitmapSource pose)
         {
             currentRow=currentFrame=-1;
-            if(sprite.Source!=pose)sprite.Source=pose;
+            PresentFrame(pose);
         }
         bool BeginPerformance(string action,bool independent)
         {
@@ -209,6 +209,7 @@ namespace DeskMate
                 }
                 gameStage=new Border { Background=null,Padding=new Thickness(0),
                     Child=slots,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Bottom };
+                gameStage.IsVisibleChanged+=delegate { PositionAttachments(); };
                 ((Grid)Content).Children.Add(gameStage);
             }
             gameStage.Visibility=Visibility.Visible;

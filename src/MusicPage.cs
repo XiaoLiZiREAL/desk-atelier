@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -36,13 +37,13 @@ namespace DeskMate
         protected override void OnRender(DrawingContext dc)
         {
             var center=new Point(37.5,37.5);
-            dc.DrawEllipse(Ui.Color("#172923"),new Pen(Ui.Color("#6E8475"),1),center,36,36);
-            for(int i=0;i<6;i++){double r=31-i*2.5;dc.DrawEllipse(null,new Pen(Ui.Color(i%2==0?"#41564B":"#344A3F"),.6),center,r,r);}
+            dc.DrawEllipse(Ui.Color("#283748"),new Pen(Ui.Color("#637387"),1),center,36,36);
+            for(int i=0;i<6;i++){double r=31-i*2.5;dc.DrawEllipse(null,new Pen(Ui.Color(i%2==0?"#677A8E":"#45586B"),.6),center,r,r);}
             dc.PushTransform(new RotateTransform((double)GetValue(AngleProperty),37.5,37.5));
-            dc.DrawEllipse(Ui.Color("#BF865C"),new Pen(Ui.Color("#DFB581"),1),center,12,12);
-            dc.DrawLine(new Pen(Ui.Color("#EBCBA2"),1),new Point(32,31.5),new Point(42,31.5));
-            dc.DrawLine(new Pen(Ui.Color("#EBCBA2"),1),new Point(34,34),new Point(40,34));
-            dc.DrawEllipse(Ui.Color("#273F33"),null,center,2.5,2.5);
+            dc.DrawEllipse(Ui.Color("#8CB8DF"),new Pen(Ui.Color("#A9CAE8"),1),center,12,12);
+            dc.DrawLine(new Pen(Ui.Color("#DFF0FF"),1),new Point(32,31.5),new Point(42,31.5));
+            dc.DrawLine(new Pen(Ui.Color("#DFF0FF"),1),new Point(34,34),new Point(40,34));
+            dc.DrawEllipse(Ui.Color(Ui.Ink),null,center,2.5,2.5);
             dc.Pop();
         }
     }
@@ -94,31 +95,31 @@ namespace DeskMate
         {
             var stack=new StackPanel();musicSurface=stack;
             recordDial=new TurntableDial(); var dialView=new Viewbox{Width=48,Height=48,Child=recordDial,Margin=new Thickness(0,0,10,0),VerticalAlignment=VerticalAlignment.Center};
-            songTitle=Ui.Heading("",17);songTitle.Foreground=Ui.Color("#FFF6E4");
+            songTitle=Ui.Heading("",18);
             songTitle.MaxHeight=44;songTitle.TextTrimming=TextTrimming.CharacterEllipsis;
-            songMeta=MusicMargin(Ui.Text("",12,"#CBDBCE"),2);songMeta.TextWrapping=TextWrapping.NoWrap;songMeta.TextTrimming=TextTrimming.CharacterEllipsis;
-            songMode=MusicMargin(Ui.Text("",11,"#E3BE7D"),0,0,3);
+            songMeta=MusicMargin(Ui.Text("",12,Ui.Muted),2);songMeta.TextWrapping=TextWrapping.NoWrap;songMeta.TextTrimming=TextTrimming.CharacterEllipsis;
+            songMode=MusicMargin(Ui.Text("",12,Ui.Accent),0,0,3);
             var track=Ui.Stack(songMode,songTitle,songMeta);
             var recordHeader=new Grid();
             recordHeader.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
             recordHeader.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});
             Grid.SetColumn(track,1);recordHeader.Children.Add(dialView);recordHeader.Children.Add(track);
-            songLine=Ui.Text("",16,"#FFF8E9");songLine.FontWeight=FontWeights.SemiBold;songLine.MaxHeight=45;songLine.TextTrimming=TextTrimming.CharacterEllipsis;
-            songNext=MusicMargin(Ui.Text("",12,"#C4D2C8"),3);songNext.MaxHeight=34;songNext.TextTrimming=TextTrimming.CharacterEllipsis;
-            songTime=Ui.Text("",12,"#D6E0D5");songTime.FontFamily=new FontFamily("Consolas, Microsoft YaHei UI");
+            songLine=Ui.Text("",16,Ui.Ink);songLine.FontWeight=FontWeights.SemiBold;songLine.MaxHeight=45;songLine.TextTrimming=TextTrimming.CharacterEllipsis;
+            songNext=MusicMargin(Ui.Text("",13,Ui.Muted),3);songNext.MaxHeight=34;songNext.TextTrimming=TextTrimming.CharacterEllipsis;
+            songTime=Ui.Text("",12,Ui.Muted);Typography.SetNumeralAlignment(songTime,FontNumeralAlignment.Tabular);
             songTime.TextAlignment=TextAlignment.Right;
             var footer=new DockPanel();DockPanel.SetDock(songTime,Dock.Right);footer.Children.Add(songTime);
-            songState=Ui.Text("",11,"#D7E1D7");songState.MaxHeight=36;songState.TextTrimming=TextTrimming.CharacterEllipsis;footer.Children.Add(songState);
-            var stage=new Border{Background=Ui.Color("#293F34"),BorderBrush=Ui.Color("#425F4C"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(14),
+            songState=Ui.Text("",12,Ui.Muted);songState.MaxHeight=36;songState.TextTrimming=TextTrimming.CharacterEllipsis;footer.Children.Add(songState);
+            var stage=new Border{Background=Ui.Color("#F0F5FA"),CornerRadius=new CornerRadius(8),
                 Padding=new Thickness(13,11,13,10),Margin=new Thickness(0,0,0,5),Child=Ui.Stack(recordHeader,
-                    new Border{Height=1,Background=Ui.Color("#536A58"),Margin=new Thickness(0,7,0,7)},songLine,songNext,MusicMargin(footer,7))};
+                    new Border{Height=1,Background=Ui.Color("#D5E1EC"),Margin=new Thickness(0,9,0,8)},songLine,songNext,MusicMargin(footer,7))};
             stack.Children.Add(stage);
 
             var scan=Ui.Button("重新识别",delegate{MusicAction(app.Music.Reload);});
             demoMusic=Ui.Button("试听内置演示",delegate{MusicAction(delegate{if(app.Music.IsDemo)app.Music.ExitDemo();else app.Music.StartDemo();});});
             musicEnabled=MusicCheck("桌宠跟唱字幕",app.Data.SingAlongEnabled,delegate(bool v){app.Data.SingAlongEnabled=v;SaveMusicPreferences();});
             var selector=new ComboBox{Width=142,MinHeight=31,FontSize=13,VerticalContentAlignment=VerticalAlignment.Center,Margin=new Thickness(0,3,12,3),
-                Padding=new Thickness(6,3,5,3),Background=Ui.Color("#FBF9EF"),ItemsSource=MusicPlayerNames};
+                Padding=new Thickness(6,3,5,3),ItemsSource=MusicPlayerNames};
             preferredMusicPlayer=selector;
             AutomationProperties.SetName(selector,"优先识别的音乐播放器");
             int selected=Array.IndexOf(MusicPlayerIds,app.Data.PreferredPlayer);

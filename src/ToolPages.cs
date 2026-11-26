@@ -9,19 +9,56 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Forms = System.Windows.Forms;
 
 namespace DeskMate
 {
+    sealed class FocusDial : FrameworkElement
+    {
+        double remaining = 1;
+        bool paused;
+        public FocusDial() { Width=72;Height=72;IsHitTestVisible=false; }
+        public void Update(double fraction,bool isPaused)
+        {
+            fraction=Math.Max(0,Math.Min(1,fraction));
+            if(fraction==remaining && paused==isPaused)return;
+            remaining=fraction;paused=isPaused;InvalidateVisual();
+        }
+        static Point OnDial(double angle,double radius)
+        {
+            return new Point(36+Math.Sin(angle)*radius,36-Math.Cos(angle)*radius);
+        }
+        protected override void OnRender(DrawingContext dc)
+        {
+            var center=new Point(36,36);
+            var ticks=new Pen(Ui.Color("#ACBED1"),1);
+            for(int n=0;n<24;n++){double angle=n*Math.PI/12;dc.DrawLine(ticks,OnDial(angle,n%2==0?28:30),OnDial(angle,32));}
+            dc.DrawEllipse(null,new Pen(Ui.Color("#D6E2EE"),3),center,23,23);
+            var stroke=new Pen(Ui.Color(paused?"#8394A8":Ui.Accent),3){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};
+            if(remaining>=1)dc.DrawEllipse(null,stroke,center,23,23);
+            else if(remaining>0){
+                var arc=new StreamGeometry();
+                using(var geometry=arc.Open()){
+                    geometry.BeginFigure(OnDial(0,23),false,false);
+                    geometry.ArcTo(OnDial(remaining*2*Math.PI,23),new Size(23,23),0,remaining>.5,SweepDirection.Clockwise,true,false);
+                }
+                dc.DrawGeometry(null,stroke,arc);
+            }
+            dc.DrawLine(stroke,center,OnDial(remaining*2*Math.PI,15));
+            dc.DrawEllipse(stroke.Brush,null,center,2,2);
+        }
+    }
+
     public partial class StudioWindow
     {
-        const string ToolInk = "#263F35";
-        const string ToolMuted = "#586D60";
-        const string ToolAccent = "#35634B";
+        const string ToolInk = Ui.Ink;
+        const string ToolMuted = Ui.Muted;
+        const string ToolAccent = Ui.Accent;
         TextBlock focusClock, focusState, focusCaption, noteFeedback, bagFeedback;
-        Border focusTrack, focusFill;
+        FocusDial focusDial;
         int shownFocusMode, previewMinutes, reminderChoice;
         string notesFilter = "全部";
         string draftNote = "", draftAddress = "";
@@ -49,7 +86,7 @@ namespace DeskMate
 
         static UIElement ToolGapCard(UIElement content)
         {
-            Border wrap = Ui.Card(content); wrap.Padding = new Thickness(11,9,11,9); wrap.Margin = new Thickness(0,0,0,8);
+            Border wrap = Ui.Card(content); wrap.Padding = new Thickness(0,1,0,11); wrap.Margin = new Thickness(0,0,0,9);
             return wrap;
         }
 
@@ -67,7 +104,7 @@ namespace DeskMate
 
         static TextBlock ToolFeedback()
         {
-            return new TextBlock { Foreground = Ui.Color("#934F35"), TextWrapping = TextWrapping.Wrap,
+            return new TextBlock { Foreground = Ui.Color("#A12620"), TextWrapping = TextWrapping.Wrap,
                 FontSize = 13, Margin = new Thickness(0, 5, 0, 0), Visibility = Visibility.Collapsed };
         }
 
@@ -91,19 +128,21 @@ namespace DeskMate
             shownFocusMode=FocusMode;
             if(app.FocusActive || previewMinutes<1)previewMinutes=app.Data.PlannedMinutes;
             var panel=new StackPanel();
-            focusState=Ui.Text("",12,"#D9E8D9");
-            focusClock=Ui.Text("",43,"#FFFBEA");focusClock.FontWeight=FontWeights.SemiBold;
-            focusClock.FontFamily=new FontFamily("Bahnschrift, Segoe UI, Microsoft YaHei UI");
-            focusCaption=Ui.Text("",12,"#D7E3D5");
-            focusTrack=new Border{Height=3,Margin=new Thickness(0,9,0,0),CornerRadius=new CornerRadius(2),Background=Ui.Color("#62826F")};
-            focusFill=new Border{Height=3,Width=0,Background=Ui.Color("#D7E4A8"),HorizontalAlignment=HorizontalAlignment.Left};
-            focusTrack.Child=focusFill;focusTrack.SizeChanged+=delegate{PaintFocusClock();};
-            panel.Children.Add(new Border{Background=Ui.Color("#315542"),Padding=new Thickness(15,10,15,12),CornerRadius=new CornerRadius(10),
-                Child=Ui.Stack(focusState,focusClock,focusCaption,focusTrack),Margin=new Thickness(0,0,0,8)});
+            focusState=Ui.Text("",13,Ui.Accent);focusState.FontWeight=FontWeights.SemiBold;
+            focusClock=Ui.Text("",42,Ui.Ink);focusClock.FontWeight=FontWeights.Light;
+            focusClock.FontFamily=new FontFamily("Segoe UI, Microsoft YaHei UI");
+            Typography.SetNumeralAlignment(focusClock,FontNumeralAlignment.Tabular);
+            focusCaption=Ui.Text("",12,Ui.Muted);
+            focusDial=new FocusDial{Margin=new Thickness(10,0,0,0)};
+            var clockFace=new DockPanel();DockPanel.SetDock(focusDial,Dock.Right);clockFace.Children.Add(focusDial);
+            clockFace.Children.Add(Ui.Stack(focusState,focusClock,focusCaption));
+            panel.Children.Add(new Border{Background=Ui.Color("#F0F5FA"),Padding=new Thickness(15,11,12,11),CornerRadius=new CornerRadius(8),
+                Child=clockFace,Margin=new Thickness(0,0,0,10)});
             PaintFocusClock();
             if(!app.FocusActive)
             {
-                var duration=Ui.Input(previewMinutes.ToString());duration.Width=51;duration.MaxLength=3;duration.ToolTip="1–180 分钟";
+                var duration=Ui.Input(previewMinutes.ToString());duration.Width=51;duration.MaxLength=3;duration.ToolTip="1–180 分钟";duration.TextAlignment=TextAlignment.Center;
+                System.Windows.Automation.AutomationProperties.SetName(duration,"专注时长，分钟");
                 var err=ToolFeedback();var units=ToolDetail("分钟");
                 Action start=delegate{
                     int minutes;
@@ -112,12 +151,15 @@ namespace DeskMate
                 };
                 duration.TextChanged+=delegate{int n;if(Int32.TryParse(duration.Text,out n)&&n>=1&&n<=180){previewMinutes=n;PaintFocusClock();Feedback(err,"");}};
                 duration.KeyDown+=delegate(object o,KeyEventArgs e){if(e.Key==Key.Enter){e.Handled=true;start();}};
-                var row=ToolActions(duration,ToolMargin(units,0,12,0),ToolAction("开始专注",start,true));
+                var row=new DockPanel();
+                var startButton=Ui.Button("开始专注",start,true);startButton.Margin=new Thickness(0,3,0,4);startButton.MinWidth=104;
+                DockPanel.SetDock(startButton,Dock.Right);row.Children.Add(startButton);
+                row.Children.Add(ToolActions(duration,units));
                 panel.Children.Add(row);panel.Children.Add(err);
-                var shortcuts=new WrapPanel();
+                var shortcuts=new WrapPanel {Margin=new Thickness(0,1,0,5)};
                 foreach(int choice in new[]{15,25,45}){
                     int n=choice;var preset=ToolAction(n+" 分钟",delegate{duration.Text=n.ToString();});
-                    preset.MinHeight=26;preset.Padding=new Thickness(8,3,8,3);shortcuts.Children.Add(preset);
+                    preset.MinHeight=26;preset.Padding=new Thickness(8,2,8,2);preset.Background=Ui.Color(Ui.Soft);preset.BorderBrush=Ui.Color(Ui.Soft);shortcuts.Children.Add(preset);
                 }
                 panel.Children.Add(shortcuts);
             }
@@ -140,11 +182,9 @@ namespace DeskMate
             int remaining = app.FocusActive ? app.RemainingSeconds : previewMinutes * 60;
             focusClock.Text = ClockTime(remaining);
             focusState.Text = app.FocusPaused ? "计时已暂停" : app.FocusActive ? "专注中" : "准备专注";
-            focusCaption.Text = app.FocusPaused ? "还剩 " + ClockTime(remaining) + "，准备好再继续。" :
-                app.FocusActive ? (app.Data.Character == "kurisu" ? "红莉栖正在整理实验手记。" : app.CharacterName + "在一旁安静地陪着你。") :
-                "选一个时长，和" + app.CharacterName + "一起开始。";
-            double part = app.FocusActive ? 1.0 - remaining / (double)Math.Max(60, app.Data.PlannedMinutes * 60) : 0;
-            focusFill.Width = Math.Max(0, focusTrack.ActualWidth * Math.Min(1, part));
+            focusCaption.Text = app.FocusActive ? "本轮共 " + app.Data.PlannedMinutes + " 分钟" : "";
+            focusCaption.Visibility=app.FocusActive?Visibility.Visible:Visibility.Collapsed;
+            focusDial.Update(app.FocusActive?remaining/(double)Math.Max(60,app.Data.PlannedMinutes*60):1,app.FocusPaused);
         }
 
         public void UpdateToolClock()
@@ -171,8 +211,10 @@ namespace DeskMate
             reminderLabels.Clear();
             StackPanel page = new StackPanel();
             StackPanel composer = new StackPanel();
-            composer.Children.Add(ToolHeading("写一张新便签"));
+            composer.Children.Add(ToolHeading("新便签"));
             TextBox body = Ui.Input(draftNote);
+            body.Margin=new Thickness(0,0,0,3);body.MinHeight=42;
+            System.Windows.Automation.AutomationProperties.SetName(body,"便签内容");
             body.MaxLength = 240; body.ToolTip = "最多 240 个字，按 Enter 保存";
             body.TextChanged += delegate { draftNote = body.Text; };
             composer.Children.Add(body);
@@ -199,17 +241,28 @@ namespace DeskMate
             body.KeyDown += delegate(object sender, KeyEventArgs e) {
                 if (e.Key == Key.Enter) { e.Handled = true; add(); }
             };
-            composer.Children.Add(ToolMargin(ToolActions(when, ToolAction("收好便签", add, true)), 6, 0, 0));
+            var noteActions=new DockPanel();var save=Ui.Button("收好便签",add,true);
+            save.Margin=new Thickness(0,4,0,4);save.MinWidth=94;DockPanel.SetDock(save,Dock.Right);
+            noteActions.Children.Add(save);when.HorizontalAlignment=HorizontalAlignment.Left;
+            System.Windows.Automation.AutomationProperties.SetName(when,"提醒时间");
+            noteActions.Children.Add(when);composer.Children.Add(noteActions);
             composer.Children.Add(noteFeedback);
             page.Children.Add(ToolGapCard(composer));
             StackPanel list = new StackPanel();
             int left = app.Data.Notes.Count(n => !n.Done);
-            list.Children.Add(ToolHeading("便签册   ·   " + left + " 项待办"));
+            var listHeader=new DockPanel();var pending=ToolDetail(left+" 项待办");
+            DockPanel.SetDock(pending,Dock.Right);listHeader.Children.Add(pending);listHeader.Children.Add(Ui.Heading("我的便签",15));
+            list.Children.Add(listHeader);
             WrapPanel filters = new WrapPanel { Margin = new Thickness(0, 0, 0, 7) };
             foreach (string choice in new string[] { "全部", "待办", "已完成" })
             {
                 string filter = choice;
-                filters.Children.Add(ToolAction(filter, delegate { notesFilter = filter; RefreshPage(); }, notesFilter == filter));
+                var tab=ToolAction(filter,delegate{notesFilter=filter;RefreshPage();});
+                bool selected=notesFilter==filter;tab.Foreground=Ui.Color(selected?Ui.Accent:Ui.Muted);
+                tab.Background=Ui.Color(selected?Ui.Selection:Ui.Paper);tab.BorderBrush=tab.Background;
+                tab.MinHeight=27;tab.Padding=new Thickness(10,2,10,2);
+                System.Windows.Automation.AutomationProperties.SetHelpText(tab,selected?"当前筛选":"筛选便签");
+                filters.Children.Add(tab);
             }
             list.Children.Add(filters);
             List<NoteItem> items = app.Data.Notes.Where(n => notesFilter == "全部" ||
@@ -218,7 +271,7 @@ namespace DeskMate
                 list.Children.Add(ToolDetail(notesFilter == "已完成" ? "勾选完成的便签，会收在这里。" :
                     notesFilter == "待办" ? "待办都处理好了。" : "写下第一件想记的事，交给桌宠保管。"));
             foreach (NoteItem note in items) list.Children.Add(NoteRow(note));
-            page.Children.Add(ToolGapCard(list));
+            page.Children.Add(list);
             return page;
         }
 
@@ -246,6 +299,7 @@ namespace DeskMate
                     MessageBoxResult.No) != MessageBoxResult.Yes) return;
                 app.Data.Notes.Remove(item); app.Save(); RefreshPage();
             });
+            remove.VerticalAlignment=VerticalAlignment.Center;remove.Padding=new Thickness(7,3,7,3);remove.MinHeight=27;
             Grid.SetColumn(remove, 2); grid.Children.Add(remove);
             return ToolSeparator(grid);
         }
@@ -261,16 +315,20 @@ namespace DeskMate
 
         static Border ToolSeparator(UIElement content)
         {
-            return new Border { BorderBrush = Ui.Color("#E3E7DD"), BorderThickness = new Thickness(0, 1, 0, 0),
+            return new Border { BorderBrush = Ui.Color(Ui.Line), BorderThickness = new Thickness(0, 1, 0, 0),
                 Padding = new Thickness(0, 8, 0, 8), Child = content };
         }
 
+        bool bagOptionsOpen;
         public UIElement BagPage()
         {
             StackPanel page = new StackPanel();
+            StackPanel links = new StackPanel();
+            links.Children.Add(ToolHeading("已收藏 · " + app.Data.Bag.Count + " 项"));
+            foreach (BagItem item in app.Data.Bag) links.Children.Add(BagRow(item));
+            page.Children.Add(links);
             StackPanel actions = new StackPanel();
-            actions.Children.Add(ToolHeading("放进背包"));
-            actions.Children.Add(ToolDetail("常用文件和文件夹可以直接拖进这里，原件保存在原处。"));
+            actions.Children.Add(ToolDetail("把文件或文件夹拖给伙伴即可添加。背包记录位置，原件保存在原处。"));
             bagFeedback = ToolFeedback();
             actions.Children.Add(ToolActions(ToolAction("选择文件", PickFiles),
                 ToolAction("选择文件夹", PickFolder)));
@@ -299,13 +357,7 @@ namespace DeskMate
             Grid.SetColumn(add, 1); urlRow.Children.Add(add);
             actions.Children.Add(urlRow);
             actions.Children.Add(bagFeedback);
-            page.Children.Add(ToolGapCard(actions));
-
-            StackPanel links = new StackPanel();
-            links.Children.Add(ToolHeading("随手打开   ·   " + app.Data.Bag.Count + " 项"));
-            if (app.Data.Bag.Count == 0) links.Children.Add(ToolDetail("背包还空着。放进第一个常用文件或网址，下次从这里打开。"));
-            foreach (BagItem item in app.Data.Bag) links.Children.Add(BagRow(item));
-            page.Children.Add(ToolGapCard(links));
+            page.Children.Add(CompactDetails("添加其他项目",actions,bagOptionsOpen,v=>bagOptionsOpen=v));
             page.AllowDrop = true;
             page.Background = Brushes.Transparent;
             page.DragOver += delegate(object sender, DragEventArgs e) {
@@ -336,7 +388,9 @@ namespace DeskMate
                 entry.Kind == "url" ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase));
             if (exists) return "这项已经在背包里了。";
             if (app.Data.Bag.Count >= 250) return "背包已满，请先移除用不到的项目。";
-            app.Data.Bag.Insert(0, entry); return null;
+            app.Data.Bag.Insert(0, entry);
+            app.Pet.RefreshBagAttachment();
+            return null;
         }
 
         void AddPaths(IEnumerable<string> paths)
@@ -468,7 +522,7 @@ namespace DeskMate
         {
             Grid grid = ThreeToolColumns();
             string type = item.Kind == "url" ? "网址" : item.Kind == "folder" ? "目录" : "文件";
-            Border tag = new Border { Background = Ui.Color("#E8EEE3"), CornerRadius = new CornerRadius(6),
+            Border tag = new Border { Background = Ui.Color(Ui.Selection), CornerRadius = new CornerRadius(4),
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 11, 0),
                 Padding = new Thickness(7, 4, 7, 4), Child = Ui.Text(type, 12, ToolAccent) };
             grid.Children.Add(tag);
@@ -481,7 +535,12 @@ namespace DeskMate
             target.ToolTip = item.Target; labels.Children.Add(target);
             Grid.SetColumn(labels, 1); grid.Children.Add(labels);
             WrapPanel buttons = ToolActions(ToolAction("打开", delegate { OpenBagItem(item); }),
-                ToolAction("移出", delegate { app.Data.Bag.Remove(item); app.Save(); RefreshPage(); }));
+                ToolAction("移出", delegate {
+                    app.Data.Bag.Remove(item);
+                    app.Pet.RefreshBagAttachment();
+                    app.Save();
+                    if (app.Data.Bag.Count == 0) Close(); else RefreshPage();
+                }));
             Grid.SetColumn(buttons, 2); grid.Children.Add(buttons);
             return ToolSeparator(grid);
         }
@@ -494,20 +553,20 @@ namespace DeskMate
                 if (item.Kind == "url")
                 {
                     Uri uri;
-                    if (!WebAddress(dest, out uri)) { Feedback(bagFeedback, "这个网址无效，请重新收藏。"); return; }
+                    if (!WebAddress(dest, out uri)) { ShowStatus("这个网址无效，请重新收藏。"); return; }
                     dest = uri.AbsoluteUri;
                 }
                 else if (!Path.IsPathRooted(dest) || (!File.Exists(dest) && !Directory.Exists(dest)))
-                { Feedback(bagFeedback, "找不到原来的位置，文件可能已移动。"); return; }
+                { ShowStatus("找不到原来的位置，文件可能已移动。"); return; }
                 Process started = Process.Start(new ProcessStartInfo { FileName = dest, UseShellExecute = true });
                 if (started != null) started.Dispose();
                 Feedback(bagFeedback, "");
             }
-            catch (Win32Exception) { Feedback(bagFeedback, "Windows 无法打开这项内容，请检查默认应用及文件位置。"); }
-            catch (InvalidOperationException) { Feedback(bagFeedback, "无法从当前位置打开，请重新选择。"); }
-            catch (ArgumentException) { Feedback(bagFeedback, "路径无效，请重新收藏。"); }
-            catch (IOException) { Feedback(bagFeedback, "无法读取这个位置。"); }
-            catch (UnauthorizedAccessException) { Feedback(bagFeedback, "Windows 未允许打开这个位置。"); }
+            catch (Win32Exception) { ShowStatus("Windows 无法打开这项内容，请检查默认应用及文件位置。"); }
+            catch (InvalidOperationException) { ShowStatus("无法从当前位置打开，请重新选择。"); }
+            catch (ArgumentException) { ShowStatus("路径无效，请重新收藏。"); }
+            catch (IOException) { ShowStatus("无法读取这个位置。"); }
+            catch (UnauthorizedAccessException) { ShowStatus("Windows 未允许打开这个位置。"); }
         }
     }
 }

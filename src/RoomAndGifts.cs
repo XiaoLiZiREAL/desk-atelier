@@ -400,8 +400,8 @@ namespace DeskMate
             foreach(var child in children) if(child!=null) { var frame=new Border{Margin=new Thickness(0,0,6,5),Child=child};panel.Children.Add(frame); }
             return panel;
         }
-        static UIElement Copy(string s) { return Ui.Text(s,13,"#52625A"); }
-        static UIElement Heading(string s) { return Ui.Text(s,19,"#243B31"); }
+        static UIElement Copy(string s) { return Ui.Text(s,13,Ui.Muted); }
+        static UIElement Heading(string s) { return Ui.Heading(s,16); }
         static string ThemeName(string key) { int ix=Array.IndexOf(ThemeKeys,key);return ThemeNames[ix<0?0:ix]; }
         ImageSource RoomSprite()
         {
@@ -413,7 +413,7 @@ namespace DeskMate
         public UIElement RoomPage()
         {
             var decor=DeskGift.Capture(app.Data,"","");
-            var caption=Ui.Text(roomStatus.Length==0?"拖动道具布置位置，点一下看看搭档的反应。":roomStatus,13,"#52625A");
+            var caption=Ui.Text(roomStatus.Length==0?"拖动道具布置位置，点一下看看搭档的反应。":roomStatus,13,Ui.Muted);
             var scene=new RoomScene(decor,RoomSprite(),delegate(int i,double x,double y)
             {
                 if(i==0){app.Data.ChairX=x;app.Data.ChairY=y;} else if(i==1){app.Data.LampX=x;app.Data.LampY=y;}else{app.Data.CupX=x;app.Data.CupY=y;}
@@ -457,7 +457,7 @@ namespace DeskMate
             if(app.Data.FocusCount<3)
                 return Ui.Card(Pile(9,Heading("一起装收音机"),Copy("每完成一次专注，就装好一件零件。装好第 3 件后，可以播放内置旋律或自己的音乐。"),
                     Copy("已装好 "+app.Data.FocusCount+" / 3 件"),Ui.Button("去专注",delegate{Go("focus");})));
-            radioStatusLabel=Ui.Text(radioMessage.Length==0?"旋钮已经装好，随时可以收听。":radioMessage,13,"#52625A");
+            radioStatusLabel=Ui.Text(radioMessage.Length==0?"旋钮已经装好，随时可以收听。":radioMessage,13,Ui.Muted);
             string track=string.IsNullOrWhiteSpace(app.Data.MusicPath)?"窗边小调 · 内置曲":Path.GetFileName(app.Data.MusicPath);
             radioToggle=Ui.Button(radioOn?"停止播放":"播放",delegate{if(radioOn){StopRadio();radioMessage="播放已停止。";}else PlayRadio();RefreshPage();},true);
             return Ui.Card(Pile(10,Heading("桌边收音机"),Copy(track),radioStatusLabel,
@@ -544,7 +544,7 @@ namespace DeskMate
             var senderInput=Ui.Input(giftSender??app.Data.GiftFrom);senderInput.MaxLength=32;
             var note=Ui.Input(giftDraft);note.MaxLength=180;note.AcceptsReturn=true;note.TextWrapping=TextWrapping.Wrap;note.MinHeight=72;
             senderInput.TextChanged+=delegate{giftSender=senderInput.Text;};note.TextChanged+=delegate{giftDraft=note.Text;};
-            var status=Ui.Text(giftStatus,13,"#52625A");
+            var status=Ui.Text(giftStatus,13,Ui.Muted);
             var export=Ui.Button("打包桌边礼物",delegate
             {
                 if(string.IsNullOrWhiteSpace(note.Text)){giftStatus="先给朋友留一句话吧。";status.Text=giftStatus;note.Focus();return;}

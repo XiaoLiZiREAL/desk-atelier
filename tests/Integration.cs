@@ -148,14 +148,23 @@ internal static partial class Integration
 
     static ContextMenu Quick()
     {
-        app.Open("home");Pump(85);
+        app.Open("home");
         var menu=CurrentMenu();
         if(menu==null||!menu.IsOpen)throw new InvalidOperationException("Compact quick menu did not open");
+        menu.UpdateLayout();
         return menu;
     }
     static ContextMenu CurrentMenu()
     {
         return (ContextMenu)typeof(PetWindow).GetField("quickMenu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(app.Pet);
+    }
+    static Button PetAccessory(string name)
+    {
+        return Walk(app.Pet).OfType<Button>().FirstOrDefault(b=>b.IsVisible && AutomationProperties.GetName(b)==name);
+    }
+    static T PaperPart<T>(string id) where T:FrameworkElement
+    {
+        return Elements<T>().Single(e=>AutomationProperties.GetAutomationId(e)==id);
     }
     [StructLayout(LayoutKind.Sequential)]struct Bounds {public int Left,Top,Right,Bottom;}
     [DllImport("user32.dll")]static extern bool GetWindowRect(IntPtr window,out Bounds result);
@@ -168,14 +177,22 @@ internal static partial class Integration
     }
     static void Nav(string page,params string[] names)
     {
-        var mapping=new Dictionary<string,string>{{"focus","番茄钟"},{"notes","便签"},{"bag","随身背包"},{"music","听音乐"},{"room","小屋"},{"gift","礼物"},{"settings","伙伴设置"},{"journal","生活手记"}};
-        var menu=Quick();var items=menu.Items.OfType<MenuItem>().ToList();
-        var choice=items.Concat(items.SelectMany(i=>i.Items.OfType<MenuItem>())).FirstOrDefault(i=>Equals(i.Header,mapping[page]));
-        if(choice==null)throw new Exception("No menu action for "+page);
-        menu.IsOpen=false;choice.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent,choice));Pump(90);
-        if(!app.Desk.IsVisible||app.Desk.CurrentTool!=page)throw new Exception("Menu did not present requested card: "+page);
+        if(page=="bag" || page=="journal")
+            Click(PetAccessory(page=="bag"?"打开随身背包":"翻开生活手记"));
+        else if(page=="room")
+        {
+            Nav("focus");Expand("专注记录");Click("去小屋听歌");
+        }
+        else
+        {
+            var mapping=new Dictionary<string,string>{{"focus","番茄钟"},{"notes","便签"},{"music","听音乐"},{"gift","礼物"},{"settings","伙伴设置"}};
+            var menu=Quick();
+            var choice=menu.Items.OfType<MenuItem>().Single(i=>Equals(i.Header,mapping[page]));
+            menu.IsOpen=false;choice.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent,choice));Pump(90);
+        }
+        if(!app.Desk.IsVisible||app.Desk.CurrentTool!=page)throw new Exception("Tool did not open: "+page);
         if(app.Desk.ActualWidth>444.5||app.Desk.ActualHeight>428.5)throw new Exception("Oversized "+page+" card");
-        Say("Native pet menu  "+page+"  "+app.Desk.ActualWidth+"x"+app.Desk.ActualHeight+" DIPs");
+        Say("Pet tool  "+page+"  "+app.Desk.ActualWidth+"x"+app.Desk.ActualHeight+" DIPs");
     }
     static void Expand(string name,bool visible=true)
     {
@@ -222,13 +239,17 @@ internal static partial class Integration
         bool contains=Walk(app.Pet).OfType<Image>().Any(i=>i.Source!=null);
         Check(contains,"The desktop character is loaded");
         var rightClick=new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Right){RoutedEvent=UIElement.MouseRightButtonUpEvent};
-        app.Pet.LiveSprite.RaiseEvent(rightClick);Pump(90);
+        app.Pet.LiveSprite.RaiseEvent(rightClick);
         var rightMenu=CurrentMenu();
         Check(rightClick.Handled&&rightMenu!=null&&rightMenu.IsOpen&&rightMenu.Placement==PlacementMode.MousePoint,"Right-clicking the desktop sprite opens its own context menu");
-        var more=rightMenu.Items.OfType<MenuItem>().Single(i=>Equals(i.Header,"更多"));
-        Check(more.Items.OfType<MenuItem>().Select(i=>(string)i.Header).SequenceEqual(new[]{"小屋","礼物","随身背包","生活手记"})&&
-            !StudioWindow.SupportsTool("play")&&!StudioWindow.SupportsTool("games"),"The desktop menu and card routes contain no window minigames");
+        Check(rightMenu.Items.OfType<MenuItem>().Select(i=>(string)i.Header).SequenceEqual(new[]{"番茄钟","听音乐","便签","礼物","伙伴设置","收起桌宠","退出"})&&
+            !StudioWindow.SupportsTool("play")&&!StudioWindow.SupportsTool("games"),"Flat desktop menu contains only its seven direct actions");
+        Check(PetAccessory("打开随身背包")==null && PetAccessory("翻开生活手记")!=null,"Fresh pet shows a paper tab and no empty backpack");
         rightMenu.IsOpen=false;
+        Nav("journal");
+        Check(PaperPart<TextBlock>("journal-position").Text=="0 / 0" && !Find("上一页").IsEnabled && !Find("下一页").IsEnabled,
+            "Empty paper journal has no active page turns");
+        app.Desk.Close();
         var menu=Quick();
         Check(!app.Desk.IsVisible&&menu.Items.OfType<MenuItem>().Count()<=8,"External activation presents a short context menu without opening a card");
         var menuBitmap=new RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth),(int)Math.Ceiling(menu.ActualHeight),96,96,PixelFormats.Pbgra32);
@@ -236,6 +257,12 @@ internal static partial class Integration
         using(var f=File.Create(Path.Combine(screenDir,"02-quick-menu.png")))encoder.Save(f);
         menu.IsOpen=false;
         Nav("focus");Capture(app.Desk,"03-tomato-ready");
+        var duration=Elements<TextBox>().Single();
+        string initial=duration.Text;duration.Text="180";duration.UpdateLayout();
+        var viewport=(ScrollViewer)duration.Template.FindName("PART_ContentHost",duration);
+        double digits=duration.GetRectFromCharacterIndex(2,true).Right-duration.GetRectFromCharacterIndex(0).Left;
+        Check(digits>0 && viewport.ViewportWidth>=digits,"Duration field fits all three digits for a 180-minute session");
+        duration.Text=initial;
         var wd=Forms.Screen.FromHandle(new WindowInteropHelper(app.Pet).Handle).WorkingArea;
         var workArea=new Rect(wd.Left,wd.Top,wd.Width,wd.Height);
         var cardRect=NativeBounds(app.Desk);var petRect=NativeBounds(app.Pet);
@@ -280,11 +307,27 @@ internal static partial class Integration
         Click("收好便签");
         Check(app.Data.Notes.Count == 1 && app.Data.Notes[0].DueUtc > DateTime.UtcNow.Ticks, "Note with future reminder saved through UI");
         Capture(app.Desk,"03-notes");
-        Nav("bag","背包","快捷背包","随身背包");
+        app.Desk.Close();
+        string sample=Path.Combine(stateDir,"书单.txt");
+        File.WriteAllText(sample,"月亮与六便士");
+        app.Desk.AcceptPetDrop(new DataObject(DataFormats.FileDrop,new[]{sample}));
+        Pump(100);
+        Check(!app.Desk.IsVisible && PetAccessory("打开随身背包")!=null,"File drop reveals backpack without opening the card");
+        Capture(app.Pet,"03-pet-accessories");
+        Nav("bag");
+        Check(HasText("书单.txt"),"Backpack opens directly to the dropped file");
+        File.Move(sample,sample+".moved");
+        Click("打开");
+        Check(HasText("文件可能已移动"),"Missing file feedback is visible without expanding backpack options");
+        File.Move(sample+".moved",sample);
+        Expand("添加其他项目");
         Elements<TextBox>().Single().Text = "example.org";
         Click("收藏网址");
-        Check(app.Data.Bag.Count == 1 && app.Data.Bag[0].Target == "https://example.org/", "Backpack bookmark through UI");
+        Check(app.Data.Bag.Count == 2 && app.Data.Bag[0].Target == "https://example.org/", "Backpack bookmark through UI");
         Capture(app.Desk, "04-bag");
+        Click("移出");Click("移出");
+        Check(!app.Desk.IsVisible && PetAccessory("打开随身背包")==null && File.Exists(sample),"Removing the last item closes the card, hides the backpack and retains the real file");
+        app.Desk.AcceptPetDrop(new DataObject(DataFormats.UnicodeText,"https://example.org/"));
         Nav("focus","专注工坊","专注","专注计时");
         Elements<TextBox>().Single().Text = "2";
         Click("开始专注");
@@ -369,6 +412,17 @@ internal static partial class Integration
         Check(app.Desk.IsVisible&&app.Desk.CurrentTool=="notes", "Tray opens only the requested note card");
         Nav("journal","生活手记","回忆","回忆手记","相处手记");
         Capture(app.Desk, "14-journal");
+        var sheet=PaperPart<Grid>("journal-sheet");
+        var body=PaperPart<TextBlock>("journal-entry");
+        string first=body.Text, previousColor=(string)sheet.Tag;
+        Click("下一页");
+        Check(body.Text==app.Data.Journal[1].Text && previousColor!=(string)sheet.Tag,"Turning a page shows the next saved entry on a differently colored sheet");
+        string held=body.Text;
+        previousColor=(string)sheet.Tag;
+        app.Remember("伙伴在桌边放下了杯子。");app.Desk.Tick();
+        Check(body.Text==held && (string)sheet.Tag==previousColor,"A new journal event preserves the open page and paper color");
+        Click("上一页");
+        Check(body.Text==first && previousColor!=(string)sheet.Tag && new[]{"黄色","蓝色","红色"}.Contains((string)sheet.Tag),"Turning back selects another valid paper color and the expected entry");
         
         Nav("room","我的小屋"); Pump(125); Capture(app.Desk,"16-compact-room");
         app.Save(); var disk=Store.Load();

@@ -11,10 +11,25 @@ namespace DeskMate
 {
     public static class Ui
     {
-        public const string Ink = "#253D34", Muted = "#59685E", Green = "#315E48", Paper = "#FAF8F2";
+        public const string Ink = "#182433", Muted = "#596677", Accent = "#005FB8", Paper = "#FFFFFF";
+        public const string Line = "#DFE5EB", Soft = "#F3F6F9", Selection = "#E8F2FC";
+        public static ResourceDictionary CardTheme()
+        {
+            using (Stream source = typeof(Ui).Assembly.GetManifestResourceStream("DeskMate.CardTheme.xaml"))
+                return (ResourceDictionary)System.Windows.Markup.XamlReader.Load(source);
+        }
         static readonly Dictionary<string, SolidColorBrush> brushes = new Dictionary<string, SolidColorBrush>();
         public static SolidColorBrush Color(string hex)
         {
+            if(SystemParameters.HighContrast)
+            {
+                switch(hex){
+                    case Ink: case Muted: return SystemColors.WindowTextBrush;
+                    case Accent: return SystemColors.HighlightBrush;
+                    case Paper: case Soft: case Selection: case "#F0F5FA": return SystemColors.WindowBrush;
+                    case Line: case "#D1D9E2": case "#C7D1DB": case "#CDD5DE": return SystemColors.WindowFrameBrush;
+                }
+            }
             SolidColorBrush result;
             if (!brushes.TryGetValue(hex, out result))
             {
@@ -47,19 +62,21 @@ namespace DeskMate
         }
         public static Border Card(UIElement content)
         {
-            return new Border { Background = Color("#FFFDF8"), BorderBrush = Color("#E1DFD2"), BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(14), Padding = new Thickness(19,16,19,16), Margin = new Thickness(0,0,0,12), Child = content };
+            return new Border { BorderBrush = Color(Line), BorderThickness = new Thickness(0,0,0,1),
+                Padding = new Thickness(0,2,0,12), Margin = new Thickness(0,0,0,8), Child = content };
         }
         public static TextBox Input(string value)
         {
-            return new TextBox { Text = value ?? "", FontSize = 14, Padding = new Thickness(9,6,9,6), Background = Color("#FFFDF9"),
-                BorderBrush = Color("#B8BFB3"), Foreground = Color(Ink), VerticalContentAlignment = VerticalAlignment.Center,
+            var input=new TextBox { Text = value ?? "", FontSize = 14, Padding = new Thickness(9,6,9,5), Background = Color(Paper),
+                BorderBrush = Color("#CDD5DE"), Foreground = Color(Ink), CaretBrush = Color(Accent), VerticalContentAlignment = VerticalAlignment.Center,
                 MinHeight = 34, Margin = new Thickness(0,3,7,5) };
+            if(SystemParameters.HighContrast)input.ClearValue(TextBox.CaretBrushProperty);
+            return input;
         }
         public static ControlTemplate ButtonTemplate()
         {
             var chrome = new FrameworkElementFactory(typeof(Border), "Chrome");
-            chrome.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+            chrome.SetValue(Border.CornerRadiusProperty, new CornerRadius(5));
             chrome.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
             chrome.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
             chrome.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
@@ -71,13 +88,13 @@ namespace DeskMate
             chrome.AppendChild(presenter);
             var template = new ControlTemplate(typeof(Button)) { VisualTree = chrome };
             var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-            hover.Setters.Add(new Setter(UIElement.OpacityProperty, 0.83, "Chrome")); template.Triggers.Add(hover);
+            hover.Setters.Add(new Setter(Border.BorderBrushProperty, Color("#7896B4"), "Chrome")); template.Triggers.Add(hover);
             var down = new Trigger { Property = System.Windows.Controls.Button.IsPressedProperty, Value = true };
-            down.Setters.Add(new Setter(UIElement.OpacityProperty, 0.69, "Chrome")); template.Triggers.Add(down);
+            down.Setters.Add(new Setter(UIElement.OpacityProperty, 0.78, "Chrome")); template.Triggers.Add(down);
             var disabled = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
             disabled.Setters.Add(new Setter(UIElement.OpacityProperty, 0.5, "Chrome")); template.Triggers.Add(disabled);
             var focus = new Trigger { Property = UIElement.IsKeyboardFocusedProperty, Value = true };
-            focus.Setters.Add(new Setter(Border.BorderBrushProperty, Color("#B17A42"), "Chrome"));
+            focus.Setters.Add(new Setter(Border.BorderBrushProperty, Color("#173D68"), "Chrome"));
             focus.Setters.Add(new Setter(Border.BorderThicknessProperty, new Thickness(2), "Chrome"));
             template.Triggers.Add(focus);
             return template;
@@ -85,12 +102,16 @@ namespace DeskMate
         static ControlTemplate buttonTemplate;
         public static Button Button(string label, Action click, bool primary = false)
         {
-            if (buttonTemplate == null) buttonTemplate = ButtonTemplate();
+            if (!SystemParameters.HighContrast && buttonTemplate == null) buttonTemplate = ButtonTemplate();
             Button button = new Button { Content = label, Cursor = Cursors.Hand, FontSize = 13, FontWeight = FontWeights.Medium,
                 Padding = new Thickness(13,7,13,7), MinHeight = 33, Margin = new Thickness(0,3,7,3),
-                Foreground = Color(primary ? "#FFFFFF" : Ink), Background = Color(primary ? Green : "#F1F1E8"),
-                BorderBrush = Color(primary ? Green : "#D7DBCF"), BorderThickness = new Thickness(1),
-                HorizontalContentAlignment = HorizontalAlignment.Center, Template = buttonTemplate };
+                Foreground = Color(primary ? Paper : Ink), Background = Color(primary ? Accent : Paper),
+                BorderBrush = Color(primary ? Accent : "#D1D9E2"), BorderThickness = new Thickness(1),
+                HorizontalContentAlignment = HorizontalAlignment.Center };
+            if(SystemParameters.HighContrast){
+                button.ClearValue(Control.ForegroundProperty);button.ClearValue(Control.BackgroundProperty);
+                button.ClearValue(Control.BorderBrushProperty);button.ClearValue(Control.BorderThicknessProperty);
+            } else button.Template=buttonTemplate;
             if (click != null) button.Click += delegate { click(); };
             return button;
         }

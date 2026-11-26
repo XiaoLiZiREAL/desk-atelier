@@ -19,7 +19,7 @@ namespace DeskMate
     public sealed partial class PetWindow : Window
     {
         private readonly Studio app;
-        private readonly Image sprite = new Image();
+        private readonly PetSprite sprite = new PetSprite();
         public Image LiveSprite { get { return sprite; } }
         private readonly TextBlock words = new TextBlock();
         private readonly Border bubble = new Border();
@@ -68,20 +68,21 @@ namespace DeskMate
             RenderOptions.SetBitmapScalingMode(sprite, BitmapScalingMode.HighQuality);
             sprite.ToolTip = "轻点打招呼 · 拖动换位置 · 右键或双击选工具";
             ToolTipService.SetInitialShowDelay(sprite, 1000);
+            InstallAttachments(panel);
             panel.Children.Add(sprite);
 
-            bubble.Background = new SolidColorBrush(Color.FromRgb(255, 252, 244));
-            bubble.BorderBrush = new SolidColorBrush(Color.FromRgb(185, 172, 148));
+            bubble.Background = Ui.Color("#FCFFFFFF");
+            bubble.BorderBrush = Ui.Color("#D8DFE7");
             bubble.BorderThickness = new Thickness(1);
-            bubble.Padding = new Thickness(12, 7, 12, 7);
-            bubble.CornerRadius = new CornerRadius(13, 13, 13, 3);
+            bubble.Padding = new Thickness(12, 8, 12, 8);
+            bubble.CornerRadius = new CornerRadius(11, 11, 11, 4);
             bubble.VerticalAlignment = VerticalAlignment.Bottom;
             bubble.HorizontalAlignment = HorizontalAlignment.Center;
             bubble.IsHitTestVisible = false;
             bubble.Visibility = Visibility.Collapsed;
-            words.FontFamily = new FontFamily("Microsoft YaHei UI");
-            words.FontSize = 12;
-            words.Foreground = new SolidColorBrush(Color.FromRgb(47, 60, 51));
+            words.FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
+            words.FontSize = 12.5;
+            words.Foreground = Ui.Color(Ui.Ink);
             words.TextWrapping = TextWrapping.Wrap;
             words.TextTrimming = TextTrimming.CharacterEllipsis;
             words.MaxHeight = 60;
@@ -100,6 +101,7 @@ namespace DeskMate
             };
             SourceInitialized += delegate {
                 handle = new WindowInteropHelper(this).Handle;
+                HwndSource.FromHwnd(handle).AddHook(HandleFlyoutInput);
                 long style = GetStyle(handle, -20);
                 SetStyle(handle, -20, (style | 0x08000000L | 0x80L) & ~0x40000L);
             };
@@ -115,17 +117,17 @@ namespace DeskMate
         }
 
         ContextMenu quickMenu;
-        static readonly string[][] MoreTools={
-            new[]{"小屋","room"},new[]{"礼物","gift"},new[]{"随身背包","bag"},new[]{"生活手记","journal"}
-        };
+        static readonly Lazy<ResourceDictionary> quickMenuTheme=new Lazy<ResourceDictionary>(delegate {
+            using(var stream=typeof(PetWindow).Assembly.GetManifestResourceStream("DeskMate.QuickMenu.xaml"))
+                return (ResourceDictionary)System.Windows.Markup.XamlReader.Load(stream);
+        });
         void BuildMenu()
         {
             menu.ShowImageMargin=false;menu.Font=new Drawing.Font("Microsoft YaHei UI",9);
             AddTray("番茄钟",delegate{app.Open("focus");});
             AddTray("听音乐",delegate{app.Open("music");});
             AddTray("便签",delegate{app.Open("notes");});
-            var more=new Forms.ToolStripMenuItem("更多");menu.Items.Add(more);
-            foreach(var entry in MoreTools){string key=entry[1];more.DropDownItems.Add(entry[0],null,delegate{app.Open(key);});}
+            AddTray("礼物",delegate{app.Open("gift");});
             menu.Items.Add(new Forms.ToolStripSeparator());
             AddTray("伙伴设置",delegate{app.Open("settings");});
             var display=new Forms.ToolStripMenuItem("桌面");menu.Items.Add(display);
@@ -156,27 +158,37 @@ namespace DeskMate
             quickMenu=CreateOverlayMenu();quickMenu.PlacementTarget=sprite;
             quickMenu.Placement=atPointer?System.Windows.Controls.Primitives.PlacementMode.MousePoint:System.Windows.Controls.Primitives.PlacementMode.Left;
             quickMenu.IsOpen=true;
+            quickMenu.Closed+=delegate { UpdateFlyoutDismissal(); };
+            UpdateFlyoutDismissal();
         }
         ContextMenu CreateOverlayMenu()
         {
-            var popup=new ContextMenu{FontFamily=words.FontFamily,FontSize=13,MinWidth=125};
-            AddOverlay(popup,"番茄钟",delegate{app.Open("focus");});
-            AddOverlay(popup,"听音乐",delegate{app.Open("music");});
-            AddOverlay(popup,"便签",delegate{app.Open("notes");});
-            var more=new MenuItem{Header="更多"};popup.Items.Add(more);
-            foreach(var entry in MoreTools){string key=entry[1];AddOverlay(more,entry[0],delegate{app.Open(key);});}
-            popup.Items.Add(new Separator());
-            AddOverlay(popup,"伙伴设置",delegate{app.Open("settings");});
-            AddOverlay(popup,"收起桌宠",ToggleVisibility);
-            AddOverlay(popup,"退出",delegate{app.Quit();});
+            var popup=new ContextMenu{FontFamily=words.FontFamily,FontSize=13};
+            var divider=new Separator();
+            if(!SystemParameters.HighContrast)
+            {
+                var theme=quickMenuTheme.Value;
+                popup.Style=(Style)theme[typeof(ContextMenu)];
+                divider.Style=(Style)theme["MenuDivider"];
+            }
+            AddOverlay(popup,"番茄钟","\uE916",delegate{app.Open("focus");});
+            AddOverlay(popup,"听音乐","\uE8D6",delegate{app.Open("music");});
+            AddOverlay(popup,"便签","\uE70B",delegate{app.Open("notes");});
+            AddOverlay(popup,"礼物","\uE7B8",delegate{app.Open("gift");});
+            popup.Items.Add(divider);
+            AddOverlay(popup,"伙伴设置","\uE713",delegate{app.Open("settings");});
+            AddOverlay(popup,"收起桌宠","\uE921",ToggleVisibility);
+            AddOverlay(popup,"退出","\uE8BB",delegate{app.Quit();});
             return popup;
         }
-        static void AddOverlay(ItemsControl owner,string label,Action action)
+        static void AddOverlay(ContextMenu owner,string label,string glyph,Action action)
         {
-            var item=new MenuItem{Header=label};
-            string glyph=label=="番茄钟"?"\uE916":label=="听音乐"?"\uE8D6":label=="便签"?"\uE70B":label=="伙伴设置"?"\uE713":null;
-            if(glyph!=null)item.Icon=Ui.Icon(glyph,13,Ui.Green);
-            item.Click+=delegate{action();};owner.Items.Add(item);
+            var icon=Ui.Icon(glyph,14,"#455465");
+            var item=new MenuItem{Header=label,Icon=icon};
+            if(SystemParameters.HighContrast)icon.SetResourceReference(TextBlock.ForegroundProperty,SystemColors.MenuTextBrushKey);
+            else item.Style=(Style)quickMenuTheme.Value[typeof(MenuItem)];
+            item.Click+=delegate{action();};
+            owner.Items.Add(item);
         }
         private void UpdateMenu()
         {
@@ -216,7 +228,7 @@ namespace DeskMate
                 scale = newScale;
                 sprite.Width = 152 * scale;
                 sprite.Height = sprite.Width * 208 / 192;
-                Width = Math.Max(sprite.Width + 24, 222);
+                Width = Math.Max(sprite.Width + 2 * AttachmentGutter(), 222);
                 Height = sprite.Height + 84;
                 bubble.MaxWidth = Width - 14;
                 bubble.Margin = new Thickness(0, 0, 0, sprite.Height - 3);
@@ -231,6 +243,7 @@ namespace DeskMate
                 if (character != null && character != "rem" && character != "kurisu") art.Remove(character);
                 character = wanted;
                 frames = LoadArt(wanted);
+                journalAnchor = EdgesOf(frames[Idle][0]).Waist;
                 currentFrame = currentRow = -1;
                 row = Idle;
                 effectUntil = 0;
@@ -249,6 +262,7 @@ namespace DeskMate
                 if (!manuallyHidden) Show();
             }
             UpdateMenu();
+            PositionAttachments();
             RefreshKaraokeOverlay();
         }
 
@@ -288,7 +302,7 @@ namespace DeskMate
             if (frames == null || (currentRow == state && currentFrame == index)) return;
             currentRow = state;
             currentFrame = index;
-            sprite.Source = frames[state][index];
+            PresentFrame(frames[state][index]);
         }
 
         private void SetTrayIcon()
@@ -675,6 +689,7 @@ namespace DeskMate
         {
             if (disposed) return;
             disposed = true;
+            UpdateFlyoutDismissal();
             timer.Stop();
             DisposeKaraoke();
             EndVisit();

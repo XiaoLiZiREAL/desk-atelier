@@ -6,6 +6,8 @@ $outPath = [IO.Path]::GetFullPath($Output)
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($outPath)) | Out-Null
 $params = @('/nologo','/target:winexe','/platform:anycpu','/optimize+','/utf8output','/codepage:65001',"/out:$outPath",
   "/win32icon:$PSScriptRoot\assets\app.ico", "/win32manifest:$PSScriptRoot\app.manifest",
+  "/resource:$PSScriptRoot\QuickMenu.xaml,DeskMate.QuickMenu.xaml",
+  "/resource:$PSScriptRoot\CardTheme.xaml,DeskMate.CardTheme.xaml",
   '/reference:System.dll','/reference:System.Core.dll','/reference:System.Xml.dll','/reference:System.Xaml.dll',
   '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.IO.Compression.dll','/reference:System.Web.Extensions.dll')
 foreach ($lib in 'WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll','UIAutomationClient.dll','UIAutomationTypes.dll') { $params += "/reference:$framework\WPF\$lib" }

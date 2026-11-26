@@ -396,10 +396,11 @@ namespace DeskMate
         bool importingCompanion;
         public UIElement ImportedCompanionCard()
         {
-            var panel=Ui.Stack(Ui.Heading("我的角色包",16),Ui.Text("导入含 pet.json 和透明 PNG 图集的桌宠 ZIP。可在这里切换已导入的伙伴。",12,Ui.Muted));
+            var panel=new StackPanel();
             var import=Ui.Button(importingCompanion?"正在读取角色包…":"导入角色 ZIP",ChooseCompanionFile);
             import.IsEnabled=!importingCompanion;import.HorizontalAlignment=HorizontalAlignment.Left;
             panel.Children.Add(import);
+            panel.Children.Add(Ui.Text("角色包需包含 pet.json 和透明 PNG 动作图集。",12,Ui.Muted));
             foreach(var entry in app.Companions())
             {
                 string id=entry.Id;
@@ -413,7 +414,7 @@ namespace DeskMate
                 DockPanel.SetDock(button,Dock.Right);row.Children.Add(button);row.Children.Add(labels);
                 panel.Children.Add(row);
             }
-            return Ui.Card(panel);
+            return panel;
         }
 
         void SelectCompanion(string id)

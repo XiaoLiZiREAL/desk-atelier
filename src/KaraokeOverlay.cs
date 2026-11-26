@@ -81,31 +81,31 @@ namespace DeskMate
         private LyricPanel CreateLyricPanel()
         {
             var p=new LyricPanel();
-            var ink=new FontFamily("Microsoft YaHei UI, Segoe UI");
+            var ink=words.FontFamily;
             p.Current=new TextBlock
             {
-                FontFamily=ink,FontSize=18,FontWeight=FontWeights.SemiBold,Foreground=Ui.Color("#FFF8E9"),
+                FontFamily=ink,FontSize=18,FontWeight=FontWeights.SemiBold,Foreground=Ui.Color(Ui.Ink),
                 TextWrapping=TextWrapping.Wrap,LineStackingStrategy=LineStackingStrategy.BlockLineHeight,LineHeight=26
             };
             p.Next=new TextBlock
             {
-                FontFamily=ink,FontSize=12.5,Foreground=Ui.Color("#CCD8CE"),Margin=new Thickness(0,4,0,0),
+                FontFamily=ink,FontSize=12.5,Foreground=Ui.Color(Ui.Muted),Margin=new Thickness(0,3,0,0),
                 TextTrimming=TextTrimming.CharacterEllipsis,TextWrapping=TextWrapping.NoWrap
             };
-            p.Symbol=new TextBlock {FontFamily=new FontFamily("Segoe UI Symbol"),FontSize=18,FontWeight=FontWeights.SemiBold,
-                Foreground=Ui.Color("#EBC783"),VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(0,1,10,0)};
+            p.Symbol=Ui.Icon("\uE8D6",15,Ui.Accent);
+            p.Symbol.VerticalAlignment=VerticalAlignment.Top;p.Symbol.Margin=new Thickness(0,5,10,0);
             var lines=new StackPanel();lines.Children.Add(p.Current);lines.Children.Add(p.Next);
             var layout=new Grid();layout.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
             layout.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});
             Grid.SetColumn(lines,1);layout.Children.Add(p.Symbol);layout.Children.Add(lines);
-            var progress=new Grid{Height=2,Margin=new Thickness(0,10,0,0),ClipToBounds=true,Background=Ui.Color("#52675F")};
+            var progress=new Grid{Height=2,Margin=new Thickness(0,10,0,0),ClipToBounds=true,Background=Ui.Color("#E4EAF0")};
             p.Fill=new ScaleTransform(0,1);
-            progress.Children.Add(new Border{Background=Ui.Color("#E4BD76"),RenderTransform=p.Fill,RenderTransformOrigin=new Point(0,.5)});
+            progress.Children.Add(new Border{Background=Ui.Color(Ui.Accent),RenderTransform=p.Fill,RenderTransformOrigin=new Point(0,.5)});
             var stack=new StackPanel();stack.Children.Add(layout);stack.Children.Add(progress);
             p.Card=new Border
             {
-                Child=stack,CornerRadius=new CornerRadius(10),Background=Ui.Color("#F42A3B34"),
-                BorderBrush=Ui.Color("#A77E8C7C"),BorderThickness=new Thickness(1),Padding=new Thickness(13,9,13,9)
+                Child=stack,CornerRadius=new CornerRadius(11),Background=Brushes.White,
+                BorderBrush=Ui.Color("#D8DFE7"),BorderThickness=new Thickness(1),Padding=new Thickness(14,10,14,9)
             };
             p.Window=new Window
             {
@@ -132,7 +132,7 @@ namespace DeskMate
             lyrics.Current.LineHeight=lyrics.Current.FontSize+7;
             lyrics.Next.Text=lyricNext;
             lyrics.Next.Visibility=lyricNext.Length==0?Visibility.Collapsed:Visibility.Visible;
-            lyrics.Symbol.Text=lyricPlaying?"♪":"Ⅱ";
+            lyrics.Symbol.Text=lyricPlaying?"\uE8D6":"\uE769";
         }
 
         private void RefreshKaraokeOverlay()
