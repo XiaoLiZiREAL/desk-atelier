@@ -6,7 +6,7 @@
 
 ## 下载便携版
 
-从发行页的 **Assets** 下载 Windows 便携 ZIP，解压到一个文件夹，双击 **窗边手记.exe**。首次启动会在桌面右下角看见蕾姆。右击小人，选择 **伙伴设置 → 史蒂夫**，就能换成 Minecraft Java 版 1.8 的经典宽臂史蒂夫。[下载最新发行版](https://github.com/XiaoLiZiREAL/desk-atelier/releases/latest)
+从发行页的 **Assets** 下载 Windows 便携 ZIP，解压到一个文件夹，双击 **窗边手记.exe**。首次启动会在桌面右下角看见蕾姆。右击小人打开 **伙伴设置**，可以换成牧濑红莉栖、史蒂夫或后藤独。[下载最新发行版](https://github.com/XiaoLiZiREAL/desk-atelier/releases/latest)
 
 支持 Windows 10 1809 及以后版本和 Windows 11，需要 .NET Framework 4.8 或更新版本，无需 ChatGPT 账号。升级时先从托盘退出旧版，再启动新版。便签、角色设置和背包索引保存在 `%LOCALAPPDATA%\DeskAtelier`。
 
@@ -38,6 +38,10 @@
 - `tests\LaunchSmoke.ps1 -Exe .\build\DeskAtelier.exe` 检查启动和单实例唤回。`tests\run-dismissal.ps1` 使用真实鼠标输入检查点击外部收起和拖放，运行时需要让出鼠标。
 
 ## 角色与素材
+
+后藤独（波奇）来自《孤独摇滚！》。她会低头练电吉他、藏拨片，听歌时也会拿起琴。点「伙伴设置 → 后藤独」就能见到她，也可以从发行页单独下载角色包。[后藤独的素材](art/hitori/)
+
+![后藤独的练琴、喝茶和跟唱动作](docs/hitori.gif)
 
 蕾姆与牧濑红莉栖的基础动作来自此前两套自定义桌宠，生活动作以原角色形象为参照逐姿势绘制。每人的素材目录都有立绘、基础图集，以及喝茶、藏物、唱歌、写字和休息的专属图集。整个目录可以压缩为可导入的角色包。[蕾姆](art/rem/) · [牧濑红莉栖](art/kurisu/)
 

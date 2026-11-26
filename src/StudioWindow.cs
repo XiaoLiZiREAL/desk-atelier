@@ -160,7 +160,7 @@ namespace DeskMate
         {
             var settings=new StackPanel();
             var pair=new Grid();
-            string[][] builtin={new[]{"rem","蕾姆","蕾姆"},new[]{"kurisu","牧濑红莉栖","红莉栖"},new[]{"steve","史蒂夫","史蒂夫"}};
+            string[][] builtin={new[]{"rem","蕾姆","蕾姆"},new[]{"kurisu","牧濑红莉栖","红莉栖"},new[]{"steve","史蒂夫","史蒂夫"},new[]{"hitori","后藤独","后藤独"}};
             foreach(var item in builtin.Where(x=>System.IO.File.Exists(app.Asset(x[0]+"-still.png"))))
             {
                 string id=item[0],name=item[1];bool active=app.Data.Character==id;
@@ -175,9 +175,9 @@ namespace DeskMate
                         Background=Ui.Color(Ui.Accent),VerticalAlignment=VerticalAlignment.Top,HorizontalAlignment=HorizontalAlignment.Right});
                 }
                 button.Content=portrait;button.HorizontalContentAlignment=HorizontalAlignment.Stretch;
-                button.Padding=new Thickness(6,6,6,7);button.Margin=new Thickness(column==0?0:4,0,column==2?0:4,5);
+                button.Padding=new Thickness(2,6,2,7);button.Margin=new Thickness(column==0?0:2,0,column==builtin.Length-1?0:2,5);
                 button.Background=Ui.Color(active?Ui.Selection:Ui.Soft);button.BorderBrush=Ui.Color(active?Ui.Accent:Ui.Soft);
-                button.ToolTip=id=="steve"?"史蒂夫 · Minecraft Java 1.8 经典造型":name;
+                button.ToolTip=id=="steve"?"史蒂夫 · Minecraft Java 1.8 经典造型":id=="hitori"?"后藤独（波奇）· 孤独摇滚！":name;
                 AutomationProperties.SetHelpText(button,active?"当前伙伴":"切换伙伴");
                 AutomationProperties.SetName(button,name);Grid.SetColumn(button,column);pair.Children.Add(button);
             }

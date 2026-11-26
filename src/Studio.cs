@@ -13,8 +13,8 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace DeskMate
 {
@@ -80,7 +80,17 @@ namespace DeskMate
         public StudioWindow Desk;
         public StudioWindow NotesDesk { get; private set; }
         public ListeningRoom Music;
-        public string CharacterName { get { return Data.Character == "kurisu" ? "红莉栖" : Data.Character == "steve" ? "史蒂夫" : Data.Character == "rem" ? "蕾姆" : (CustomName(Data.Character) ?? "伙伴"); } }
+        public string CharacterName {
+            get {
+                switch(Data.Character) {
+                    case "kurisu": return "红莉栖";
+                    case "steve": return "史蒂夫";
+                    case "rem": return "蕾姆";
+                    case "hitori": return "后藤独";
+                    default: return CustomName(Data.Character) ?? "伙伴";
+                }
+            }
+        }
         readonly string folder;
         public string UserFolder { get { return folder; } }
         readonly string assetFolder;
@@ -233,6 +243,9 @@ namespace DeskMate
             if(Data.Character=="steve")
                 lines=action=="tea"?new[]{"水瓶带上了。歇口气再挖。","喝口水，我把地图摊开。","这一瓶留给你。"}:
                     new[]{"镐子在，地图也在。出发？","刚挖到一块圆石。","我在这儿守着工作台。"};
+            if(Data.Character=="hitori")
+                lines=action=="tea"?new[]{"谢、谢谢。我两只手拿比较稳。","等茶凉一点，我再练一遍副歌。"}:
+                    new[]{"刚才那段……你听见了吗？","我把音量调小一点。这样可以吗？","等、等一下，这次我能弹顺的。"};
             int pick = (previousLine + 1 + random.Next(lines.Length - 1)) % lines.Length;
             previousLine = pick;
             string words = lines[pick];

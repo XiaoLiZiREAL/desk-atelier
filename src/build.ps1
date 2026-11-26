@@ -16,6 +16,12 @@ $systemMetadata = Join-Path $env:WINDIR 'System32\WinMetadata'
 if ([Environment]::Is64BitOperatingSystem -and $framework -notmatch 'Framework64') { $systemMetadata = Join-Path $env:WINDIR 'Sysnative\WinMetadata' }
 foreach ($lib in 'Windows.Media.winmd','Windows.Foundation.winmd','Windows.Graphics.winmd','Windows.Globalization.winmd','Windows.Storage.winmd') { $params += "/reference:$systemMetadata\$lib" }
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'assets') -File) { $params += ('/resource:' + $file.FullName + ',art.' + $file.Name) }
+$hitori=Join-Path $PSScriptRoot '../art/hitori'
+$params += "/resource:$hitori/atlas.png,art.hitori.png"
+$params += "/resource:$hitori/portrait.png,art.hitori-still.png"
+foreach ($action in 'tea','game','song','focus','rest') {
+    $params += "/resource:$hitori/actions/$action.png,art.motion-hitori-$action.png"
+}
 foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cs') { $params += $file.FullName }
 & (Join-Path $framework 'csc.exe') @params
 if ($LASTEXITCODE) { throw "Compilation failed ($LASTEXITCODE)" }

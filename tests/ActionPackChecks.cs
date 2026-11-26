@@ -36,7 +36,9 @@ internal static class ActionPackChecks
             string folder=Path.GetFullPath(args[0]);Directory.CreateDirectory(folder);
             Environment.SetEnvironmentVariable("DESKATELIER_DATA",folder);
             var app=new Studio(folder);app.ExtractArt();
-            if(args.Length>1)Check(app.ImportCompanion(Path.GetFullPath(args[1]))=="steve","distributed Steve pack matches the built-in rig");
+            if(args.Length>1 && args[1]!="--hitori")Check(app.ImportCompanion(Path.GetFullPath(args[1]))=="steve","distributed Steve pack matches the built-in rig");
+            int hitori=Array.IndexOf(args,"--hitori");
+            if(hitori>=0)Check(app.ImportCompanion(Path.GetFullPath(args[hitori+1]))=="hitori","distributed Hitori pack matches her built-in artwork");
             Check(app.ImportCompanion(Make(app,folder,"base",false,false,false))=="steve","legacy base-only Steve deduplicated");
             Check(app.ImportCompanion(Make(app,folder,"complete",true,false,false))=="steve","complete built-in actions deduplicated");
             string changed=Make(app,folder,"changed",true,true,false),id=app.ImportCompanion(changed);

@@ -240,6 +240,11 @@ internal static class LifeChecks
             bool pending=args.Length<2||!String.Equals(args[1],"True",StringComparison.OrdinalIgnoreCase);
             if(!pending || File.Exists(app.Asset("motion-steve-mine.png"))){CheckArt("steve",true);app.Data.Character="steve";pet.Sync();DueSoon();Until(()=>pet.CurrentActivity=="mine",2200,"Steve autonomously mines using his character-specific schedule");Need(Poses("steve","mine").Contains(pet.LiveSprite.Source),"live Steve sprite is the mining pose");CaptureSignature("steve","mine");Need(app.Data.MinerRoutine==1,"Steve mining progress persists separately from other partners");}
             else Say("Steve is not embedded in this intermediate candidate; pass -RequireSteve for release verification.");
+            CheckArt("hitori",false);
+            app.Data.Character="hitori";pet.Sync();ResetPose();DueSoon();
+            Until(()=>pet.CurrentActivity=="focus",2200,"Hitori starts by practicing guitar without user input");
+            CaptureSignature("hitori","focus");
+            Need(Store.Load().GuitarRoutine==1,"Hitori keeps her own routine progress");
             Say("ALL LIFE CHECKS PASSED");ok=true;
         }
         catch(Exception e){Say("FAIL "+e.GetType().Name+" "+e.Message);Say(e.StackTrace??"");}

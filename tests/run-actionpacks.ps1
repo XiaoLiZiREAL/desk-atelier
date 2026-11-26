@@ -1,5 +1,5 @@
 param([string]$Program=(Join-Path $PSScriptRoot '..\build\DeskAtelier.exe'),
-      [string]$Output=(Join-Path $PSScriptRoot '..\build\action-pack-qa'),[string]$Pack='')
+      [string]$Output=(Join-Path $PSScriptRoot '..\build\action-pack-qa'),[string]$Pack='', [string]$HitoriPack='')
 $ErrorActionPreference='Stop'
 $frame=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 if(!(Test-Path -LiteralPath $frame)){$frame=Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319'}
@@ -15,5 +15,6 @@ $argsForCompiler+=Join-Path $PSScriptRoot 'ActionPackChecks.cs'
 if($LASTEXITCODE){throw 'Action pack test build failed'}
 $testArgs=@((Join-Path $dir ([Guid]::NewGuid().ToString('N'))))
 if($Pack){$testArgs+=[IO.Path]::GetFullPath($Pack)}
+if($HitoriPack){$testArgs+='--hitori';$testArgs+=[IO.Path]::GetFullPath($HitoriPack)}
 & $runner @testArgs
 if($LASTEXITCODE){throw 'Action pack verification failed'}

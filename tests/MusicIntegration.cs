@@ -166,6 +166,12 @@ internal static partial class Integration
                 "Real Windows session and local LRC resolve automatically despite the legacy single-provider preference");
             Until(()=>app.Pet.KaraokeMoving&&app.Pet.KaraokeVisible&&app.Pet.KaraokeLyric==app.Music.CurrentLine,"Playing native media animates the pet with the matching lyric");
             SavePetAndPanel("04-desktop-native");
+            Nav("settings");Click("后藤独");app.Desk.Hide();
+            var songPoses=(BitmapSource[])typeof(PetWindow).GetMethod("ActionFrames",BindingFlags.Instance|BindingFlags.NonPublic)
+                .Invoke(app.Pet,new object[]{"hitori","song"});
+            Until(()=>app.Pet.KaraokeMoving && app.Pet.KaraokeVisible && songPoses.Contains(app.Pet.LiveSprite.Source),
+                "Switching to Hitori during playback uses her own guitar-and-singing poses with live lyrics");
+            SavePetAndPanel("05-hitori-singing");
             player.Pause();player.PlaybackSession.Position=TimeSpan.FromSeconds(26);
             song.Controls.PlaybackStatus=MediaPlaybackStatus.Paused;song.Position(26);
             Until(()=>!app.Music.Playing&&app.Music.CurrentLine=="灯影在纸上慢下来"&&!app.Pet.KaraokeMoving,"Native pause updates the current line and stops singing");

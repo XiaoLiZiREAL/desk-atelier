@@ -637,7 +637,15 @@ namespace DeskMate
                     case 0: SetEffect(Wait, 3200); break;
                     case 1:
                         SetEffect(Wave, 2100);
-                        if (!app.Data.Quiet) Say(rem ? "红莉栖小姐，刚好泡了茶。" : character == "kurisu" ? "蕾姆？来得正好，实验告一段落了。" : "蕾姆，来窗边一起坐坐吧。");
+                        if (!app.Data.Quiet)
+                        {
+                            switch(character) {
+                                case "rem": Say("红莉栖小姐，刚好泡了茶。");break;
+                                case "kurisu": Say("蕾姆？来得正好，实验告一段落了。");break;
+                                case "hitori": Say("蕾姆……要听我刚练好的那一小段吗？");break;
+                                default: Say("蕾姆，来窗边一起坐坐吧。");break;
+                            }
+                        }
                         break;
                     case 2: SetEffect(Review, 3300); break;
                     case 3: case 4:

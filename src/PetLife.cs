@@ -14,7 +14,7 @@ namespace DeskMate
     {
         public string ActivityPace = "normal";
         public bool PetWelcomeSeen;
-        public int MaidRoutine, LabRoutine, MinerRoutine, GuestRoutine;
+        public int MaidRoutine, LabRoutine, MinerRoutine, GuitarRoutine, GuestRoutine;
     }
 
     // Hand-authored pose order and holds. Feet and contact points live in the drawings.
@@ -65,6 +65,7 @@ namespace DeskMate
         static readonly string[] maidDay={"tea","game","focus","rest","visit","tea","focus","game","rest"};
         static readonly string[] labDay={"focus","game","tea","rest","focus","visit","game","tea","rest"};
         static readonly string[] minerDay={"mine","game","tea","focus","rest","mine","visit","tea","game"};
+        static readonly string[] guitarDay={"focus","tea","game","rest","focus","visit","tea","rest"};
         public string CurrentActivity { get { return visitor!=null?"visit":dancing?"song":performance; } }
         public bool OfferingGame { get { return soloGame && gameResultAt==0; } }
 
@@ -142,8 +143,24 @@ namespace DeskMate
         }
         int RoutineIndex
         {
-            get { return character=="rem"?app.Data.MaidRoutine:character=="kurisu"?app.Data.LabRoutine:character=="steve"?app.Data.MinerRoutine:app.Data.GuestRoutine; }
-            set { if(character=="rem")app.Data.MaidRoutine=value;else if(character=="kurisu")app.Data.LabRoutine=value;else if(character=="steve")app.Data.MinerRoutine=value;else app.Data.GuestRoutine=value; }
+            get {
+                switch(character) {
+                    case "rem": return app.Data.MaidRoutine;
+                    case "kurisu": return app.Data.LabRoutine;
+                    case "steve": return app.Data.MinerRoutine;
+                    case "hitori": return app.Data.GuitarRoutine;
+                    default: return app.Data.GuestRoutine;
+                }
+            }
+            set {
+                switch(character) {
+                    case "rem": app.Data.MaidRoutine=value;break;
+                    case "kurisu": app.Data.LabRoutine=value;break;
+                    case "steve": app.Data.MinerRoutine=value;break;
+                    case "hitori": app.Data.GuitarRoutine=value;break;
+                    default: app.Data.GuestRoutine=value;break;
+                }
+            }
         }
         public void RefreshRoutinePace()
         {
@@ -175,7 +192,7 @@ namespace DeskMate
                 if(!BeginPerformance("focus",false))SetEffect(Work,4200);
                 ambientAt=now+36000;return;
             }
-            var plan=character=="kurisu"?labDay:character=="steve"||ActionFrames(character,"mine")!=null?minerDay:maidDay;
+            var plan=character=="hitori"?guitarDay:character=="kurisu"?labDay:character=="steve"||ActionFrames(character,"mine")!=null?minerDay:maidDay;
             int ix=Math.Max(0,RoutineIndex)%plan.Length;
             string action=plan[ix];
             if(action=="visit") StartVisit(true);
@@ -189,7 +206,6 @@ namespace DeskMate
             app.Save();
             ambientAt=NextAmbient();
         }
-        string Treasure { get { return character=="steve"?"一颗绿宝石":"一枚纽扣"; } }
         void StartBoxScene()
         {
             soloGame=true;hiddenBox=random.Next(3);winningGuess=-1;gameResultAt=0;lastDirection="";
@@ -219,7 +235,7 @@ namespace DeskMate
             {
                 bool correct=reveal && hiddenBox==i;
                 boxButtons[i].IsHitTestVisible=listen;boxButtons[i].Focusable=listen;
-                boxArt[i].Reveal(correct,character=="steve",winningGuess==i&&!correct);
+                boxArt[i].Reveal(correct,character,winningGuess==i&&!correct);
             }
         }
         void GuessBox(int chosen)
@@ -253,7 +269,7 @@ namespace DeskMate
             {
                 int excluded=(hiddenBox+1+random.Next(2))%3;
                 lastDirection=new[]{"左边","中间","右边"}[excluded];
-                Say("我藏好啦。给你个提示，不在"+lastDirection+"。");
+                Say((character=="hitori"?"拨片藏好了。不在":"我藏好啦。给你个提示，不在")+lastDirection+"。");
                 RenderBoxes(true,false);
             }
             int pose=t<2600?ActionScore.For("game").At(t):((t/1150)%3==0?4:3);
@@ -262,23 +278,25 @@ namespace DeskMate
     }
     internal sealed class DeskChest : FrameworkElement
     {
-        bool open,emerald,wrong;
+        bool open,wrong;
+        string character;
         public DeskChest(){Width=39;Height=32;}
-        public void Reveal(bool opened,bool green,bool missed)
-        {open=opened;emerald=green;wrong=missed;InvalidateVisual();}
+        public void Reveal(bool opened,string who,bool missed)
+        {open=opened;character=who;wrong=missed;InvalidateVisual();}
         static void Shape(DrawingContext dc,string fill,string outline,string path)
         {dc.DrawGeometry(Ui.Color(fill),new Pen(Ui.Color(outline),1.15),Geometry.Parse(path));}
         protected override void OnRender(DrawingContext dc)
         {
             dc.DrawEllipse(Ui.Color("#550B1816"),null,new Point(20,29.5),17,2.2);
-            string dark=emerald?"#4A3525":"#563E2C";
+            string dark=character=="steve"?"#4A3525":"#563E2C";
             Shape(dc,wrong?"#A7836B":"#C9965A",dark,"M3,14 L30,14 30,28 3,27 Z");
             Shape(dc,"#8D603B",dark,"M30,14 L36,10 36,24 30,28 Z");
             if(open)
             {
                 Shape(dc,"#8C6A49",dark,"M4,13 L4,5 32,4 34,10 30,14 Z");
                 Shape(dc,"#66503A",dark,"M4,14 L30,14 35,11 10,11 Z");
-                if(emerald)Shape(dc,"#59CF87","#285A42","M19,5 L23,9 18,16 14,10 Z");
+                if(character=="steve")Shape(dc,"#59CF87","#285A42","M19,5 L23,9 18,16 14,10 Z");
+                else if(character=="hitori")Shape(dc,"#6BC2C6","#315D68","M14,6 Q18,3 23,6 Q25,9 19,16 Q14,13 13,9 Z");
                 else{dc.DrawEllipse(Ui.Color("#C96E5F"),new Pen(Ui.Color("#743D38"),1),new Point(18,10),4,3.6);
                      dc.DrawEllipse(Ui.Color("#F4CAB0"),null,new Point(17,9),.75,.75);dc.DrawEllipse(Ui.Color("#F4CAB0"),null,new Point(19,11),.75,.75);}
             }

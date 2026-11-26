@@ -393,6 +393,10 @@ internal static partial class Integration
         Check(app.Data.Character=="steve"&&app.CharacterName=="史蒂夫"&&app.Pet.LiveSprite.Source!=null&&Store.Load().Character=="steve",
             "Switching to Steve applies an actual sprite and persists the character choice");
         Capture(app.Pet,"12-desktop-steve");
+        Click("后藤独");
+        Check(app.Data.Character=="hitori" && Store.Load().Character=="hitori" && app.CharacterName=="后藤独",
+            "Hitori is selectable as a built-in partner and the choice survives reload");
+        Capture(app.Pet,"12-desktop-hitori");
         if (app.Data.Character != "kurisu")
         {
             var pick = Find("红莉栖","牧濑红莉栖","选择红莉栖","换成红莉栖");

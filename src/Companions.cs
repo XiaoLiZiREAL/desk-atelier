@@ -23,7 +23,8 @@ namespace DeskMate
     {
         const int MetadataLimit = 16384, ImageLimit = 20 * 1024 * 1024;
         internal const int MaxPets = 64;
-        internal static bool IsBuiltin(string id){return id=="rem" || id=="kurisu" || id=="steve";}
+        internal static readonly string[] BuiltinIds={"rem","kurisu","steve","hitori"};
+        internal static bool IsBuiltin(string id){return Array.IndexOf(BuiltinIds,id)>=0;}
         internal static bool IsId(string id)
         {
             return id != null && id.Length == 71 && id.StartsWith("custom-", StringComparison.Ordinal) &&
@@ -368,7 +369,7 @@ namespace DeskMate
 
         string MatchBuiltin(string hash)
         {
-            foreach (string id in new[]{"rem","kurisu","steve"})
+            foreach (string id in CompanionArchive.BuiltinIds)
             {
                 if(!File.Exists(Asset(id+".png")))continue;
                 string fingerprint;
