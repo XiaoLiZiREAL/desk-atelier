@@ -313,6 +313,13 @@ internal static partial class Integration
         app.Desk.AcceptPetDrop(new DataObject(DataFormats.FileDrop,new[]{sample}));
         Pump(100);
         Check(!app.Desk.IsVisible && PetAccessory("打开随身背包")!=null,"File drop reveals backpack without opening the card");
+        var paper=PetAccessory("翻开生活手记");
+        var bag=PetAccessory("打开随身背包");
+        var sprite=app.Pet.LiveSprite;
+        var paperCenter=paper.TranslatePoint(new Point(paper.ActualWidth/2,paper.ActualHeight/2),sprite);
+        var bagCenter=bag.TranslatePoint(new Point(bag.ActualWidth/2,bag.ActualHeight/2),sprite);
+        Check(paperCenter.X>sprite.ActualWidth*.5 && paperCenter.Y>sprite.ActualHeight*.73 &&
+            bagCenter.X<sprite.ActualWidth*.5 && bagCenter.Y>sprite.ActualHeight*.73,"Paper tab is at the pet's lower right and backpack is at its lower left");
         Capture(app.Pet,"03-pet-accessories");
         Nav("bag");
         Check(HasText("书单.txt"),"Backpack opens directly to the dropped file");

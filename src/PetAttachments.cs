@@ -12,11 +12,10 @@ namespace DeskMate
     public sealed partial class PetWindow
     {
         Button backpackButton, journalButton;
-        double journalAnchor = .68;
         readonly ConditionalWeakTable<BitmapSource, PropEdges> frameEdges = new ConditionalWeakTable<BitmapSource, PropEdges>();
         byte[] scan;
 
-        sealed class PropEdges { public double Waist, PaperRight, BagLeft; }
+        sealed class PropEdges { public double PaperRight, BagLeft; }
 
         void InstallAttachments(Grid panel)
         {
@@ -75,27 +74,21 @@ namespace DeskMate
             if (frameEdges.TryGetValue(frame, out edges)) return edges;
             BitmapSource pixels = PetSprite.Readable(frame);
             int w = pixels.PixelWidth, h = pixels.PixelHeight, stride = 4*w;
-            int first = (int)(.51*h), waist = (int)(.54*h), lastPaper = (int)(.61*h);
-            int firstBag = (int)(.74*h), last = Math.Min(h-1, (int)(.95*h));
+            // Both props sit by the feet. Only read the lower band of each pose.
+            int first = (int)(.74*h), ankle = (int)(.83*h), last = Math.Min(h-1, (int)(.95*h));
             int bytes = (last-first+1)*stride;
             if (scan == null || scan.Length < bytes) scan = new byte[bytes];
             pixels.CopyPixels(new Int32Rect(0, first, w, last-first+1), scan, stride, 0);
-            int right = 0, resting = 0, left = w;
-            for (int y=first; y<=lastPaper; y++)
-                for (int x=w-1; x>=0; x--)
-                    if (scan[(y-first)*stride + 4*x+3] >= 32)
-                    {
-                        right = Math.Max(right, x+1);
-                        if (y==waist) resting = x+1;
-                        break;
-                    }
-            for (int y=firstBag; y<=last; y++)
+            int right = 0, left = w;
+            for (int y=first; y<=last; y++)
+            {
                 for (int x=0; x<left; x++)
                     if (scan[(y-first)*stride + 4*x+3] >= 32) { left=x; break; }
-            edges = new PropEdges {
-                Waist = resting==0 ? .68 : Math.Max(.53, (double)resting/w),
-                PaperRight = (double)right/w, BagLeft = (double)left/w
-            };
+                if (y<ankle) continue;
+                for (int x=w-1; x>=right; x--)
+                    if (scan[(y-first)*stride + 4*x+3] >= 32) { right=x+1; break; }
+            }
+            edges = new PropEdges { PaperRight = right==0 ? .58 : (double)right/w, BagLeft = (double)left/w };
             frameEdges.Add(frame, edges);
             return edges;
         }
@@ -119,14 +112,10 @@ namespace DeskMate
             if (backpackButton == null || scale <= 0 || frame == null) return;
             var current = EdgesOf(frame);
             double spriteLeft = (Width - sprite.Width)/2;
-            // Start at the resting waist. An unusually wide pose only nudges a prop
-            // outward as far as necessary to leave a usable part of its face exposed.
             double tabWidth = Math.Max(32, 39 * scale), tabHeight = tabWidth * 37 / 45;
             journalButton.Width = tabWidth;
             journalButton.Height = tabHeight;
-            double tabLeft = spriteLeft + Math.Max(sprite.Width * journalAnchor - tabWidth * .23,
-                sprite.Width * current.PaperRight - tabWidth * .33);
-            journalButton.Margin = new Thickness(Math.Min(tabLeft, Width - tabWidth - 2), 0, 0, sprite.Height * .46 - tabHeight * .5);
+            double tabLeft = spriteLeft + sprite.Width * current.PaperRight - tabWidth * .27;
 
             double bagWidth = Math.Max(29, 38 * scale);
             backpackButton.Width = bagWidth;
@@ -134,8 +123,14 @@ namespace DeskMate
             double bagLeft = Math.Min(Width / 2 - sprite.Width * .205 - bagWidth,
                 spriteLeft + sprite.Width * current.BagLeft - bagWidth * .82);
             if (gameStage != null && gameStage.IsVisible)
-                bagLeft = Math.Min(bagLeft, (Width - 129) / 2 - bagWidth - 3);
-            backpackButton.Margin = new Thickness(Math.Max(2, bagLeft), 0, 0, Math.Max(2, 3 * scale));
+            {
+                const double chestRowWidth = 3 * (39 + 2 * 2);
+                bagLeft = Math.Min(bagLeft, (Width - chestRowWidth) / 2 - bagWidth - 3);
+                tabLeft = Math.Max(tabLeft, (Width + chestRowWidth) / 2 + 3);
+            }
+            double ground = Math.Max(2, 3 * scale);
+            journalButton.Margin = new Thickness(Math.Min(tabLeft, Width - tabWidth - 2), 0, 0, ground);
+            backpackButton.Margin = new Thickness(Math.Max(2, bagLeft), 0, 0, ground);
         }
 
         // The ordinary Image hit region includes transparent atlas padding. Only sample a

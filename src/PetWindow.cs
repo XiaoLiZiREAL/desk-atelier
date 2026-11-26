@@ -243,7 +243,6 @@ namespace DeskMate
                 if (character != null && character != "rem" && character != "kurisu") art.Remove(character);
                 character = wanted;
                 frames = LoadArt(wanted);
-                journalAnchor = EdgesOf(frames[Idle][0]).Waist;
                 currentFrame = currentRow = -1;
                 row = Idle;
                 effectUntil = 0;
