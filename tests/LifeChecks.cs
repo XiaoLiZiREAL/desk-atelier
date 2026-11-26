@@ -16,19 +16,17 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DeskMate;
-using Drawing=System.Drawing;
 
 internal static class LifeChecks
 {
     static readonly BindingFlags Fields=BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic;
     static readonly List<string> lines=new List<string>();
-    static Studio app;static PetWindow pet;static Window backdrop;
-    static string target,shots,state;static IntPtr petHandle,backHandle;
+    static Studio app;static PetWindow pet;
+    static string target,shots,state;static IntPtr petHandle;
     [StructLayout(LayoutKind.Sequential)] struct NativeRect{public int Left,Top,Right,Bottom;}
     [StructLayout(LayoutKind.Sequential)] struct NativePoint{public int X,Y;}
     [DllImport("user32.dll")]static extern bool GetWindowRect(IntPtr hwnd,out NativeRect rect);
     [DllImport("user32.dll")]static extern bool GetCursorPos(out NativePoint point);
-    [DllImport("user32.dll")]static extern IntPtr WindowFromPoint(NativePoint point);
     [DllImport("user32.dll")]static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int w,int h,uint flags);
 
     static void Say(string message){lines.Add(message);Console.WriteLine(message);}
@@ -50,33 +48,17 @@ internal static class LifeChecks
     static void DueSoon(){Put("ambientAt",PetNow()+100);}
     static void AgeOffer(long ms){Put("performanceStart",PetNow()-ms);}
     static void ResetPose(){typeof(PetWindow).GetMethod("FinishPerformance",Fields).Invoke(pet,null);}
-    static void NoTools(){Need(!app.Desk.IsVisible && !app.Windows.OfType<Window>().Any(w=>w.IsVisible&&w!=pet&&w!=backdrop),"only the pet is visible; workbench and game windows stay closed");}
+    static void NoTools(){Need(!app.Windows.OfType<Window>().Any(w=>w.IsVisible&&w!=pet),"only the pet is visible; workbench and game windows stay closed");}
 
-    static void BackPet()
+    static void CapturePet(string name)
     {
-        NativeRect p;GetWindowRect(petHandle,out p);
-        var backdropContent=new Border{Background=new LinearGradientBrush(Color.FromRgb(230,233,219),Color.FromRgb(199,214,195),90)};
-        backdrop=new Window{Title="Life QA backdrop",Content=backdropContent,Background=Brushes.Beige,Topmost=pet.Topmost,WindowStyle=WindowStyle.None,
-            ResizeMode=ResizeMode.NoResize,ShowInTaskbar=false,ShowActivated=false,WindowStartupLocation=WindowStartupLocation.Manual,Width=pet.ActualWidth,Height=pet.ActualHeight,
-            Left=pet.Left,Top=pet.Top,Focusable=false};
-        backdrop.Show();backHandle=new WindowInteropHelper(backdrop).Handle;
-        SetWindowPos(backHandle,petHandle,p.Left,p.Top,p.Right-p.Left,p.Bottom-p.Top,0x10);
-        Pump(80);
-    }
-    static void GuardedScreenshot(string name)
-    {
-        NativeRect r;if(!GetWindowRect(petHandle,out r))throw new InvalidOperationException("Pet HWND missing");
-        int w=r.Right-r.Left,h=r.Bottom-r.Top;
-        foreach(int x in new[]{r.Left+3,r.Right-4})
-        foreach(int y in new[]{r.Top+3,r.Bottom-4})
-        {
-            var actual=WindowFromPoint(new NativePoint{X=x,Y=y});
-            if(actual!=backHandle && actual!=petHandle)throw new InvalidOperationException("Cannot capture the private test backdrop; an unrelated window overlaps the test region");
-        }
-        using(var bmp=new Drawing.Bitmap(w,h))using(var graphics=Drawing.Graphics.FromImage(bmp))
-        {
-            graphics.CopyFromScreen(r.Left,r.Top,0,0,new Drawing.Size(w,h));bmp.Save(Path.Combine(shots,name+".png"),Drawing.Imaging.ImageFormat.Png);
-        }
+        if(!pet.IsVisible || PresentationSource.FromVisual(pet)==null)throw new InvalidOperationException("Pet window is not visible");
+        var content=(FrameworkElement)pet.Content;
+        int width=(int)Math.Ceiling(content.ActualWidth),height=(int)Math.Ceiling(content.ActualHeight);
+        var bitmap=new RenderTargetBitmap(width,height,96,96,PixelFormats.Pbgra32);
+        bitmap.Render(content);
+        var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));
+        using(var output=File.Create(Path.Combine(shots,name+".png")))png.Save(output);
     }
     static BitmapSource[] Poses(string character,string action)
     {
@@ -142,7 +124,7 @@ internal static class LifeChecks
                 began=true;int index=Array.IndexOf(frames,pet.LiveSprite.Source);
                 if(index<0)throw new Exception("Runtime tea source is not a packaged authored pose");
                 if(order.Count==0||order[order.Count-1]!=index)order.Add(index);
-                if(seen.Add(index))GuardedScreenshot("natural-tea-"+index);
+                if(seen.Add(index))CapturePet("natural-tea-"+index);
             }
             else if(began)break;
         }
@@ -159,15 +141,15 @@ internal static class LifeChecks
     {
         int count=app.Data.GameRounds,wins=app.Data.GamesWon;GetGame();
         Until(()=>Read<Button[]>("boxButtons")[0].IsHitTestVisible,3700,"chests become clickable after the hiding action");
-        GuardedScreenshot("on-pet-chests");NoTools();
+        CapturePet("on-pet-chests");NoTools();
         int answer=Read<int>("hiddenBox");var button=Read<Button[]>("boxButtons")[answer];
         Need(AutomationProperties.GetName(button).Contains("盒子"),"real chest UI has an accessible action");
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent,button));Pump(100);
         Need(!pet.OfferingGame&&app.Data.GameRounds==count+1&&app.Data.GamesWon==wins+1,"correct chest scores exactly once");
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent,button));Need(app.Data.GameRounds==count+1,"repeat click after reveal is idempotent");
-        GuardedScreenshot("on-pet-reveal");Until(()=>pet.CurrentActivity!="game",3000,"game result closes itself");
+        CapturePet("on-pet-reveal");Until(()=>pet.CurrentActivity!="game",3000,"game result closes itself");
         var saved=Store.Load();Need(saved.GameRounds==count+1&&saved.GamesWon==wins+1&&saved.MaidRoutine==2,"score and next routine persist to disk");
-        app.Data.MaidRoutine=1;GetGame();AgeOffer(14300);Pump(180);Need(!pet.OfferingGame,"unanswered game reveals its answer");GuardedScreenshot("unanswered-reveal");
+        app.Data.MaidRoutine=1;GetGame();AgeOffer(14300);Pump(180);Need(!pet.OfferingGame,"unanswered game reveals its answer");CapturePet("unanswered-reveal");
         Until(()=>pet.CurrentActivity!="game",3000,"unanswered result clears without opening a tool");
         Need(app.Data.GameRounds==count+1&&app.Data.GamesWon==wins+1,"ignoring costs no score and creates no extra round");NoTools();
     }
@@ -180,9 +162,12 @@ internal static class LifeChecks
         ResetPose();DueSoon();Pump(350);Need(pet.CurrentActivity=="focus"&&!pet.OfferingGame,"focus allows work gestures without new invitations");
         app.CancelFocus();ResetPose();
         app.Data.MaidRoutine=1;GetGame();
-        app.Music.StartDemo();Pump(350);Need(app.Music.Playing&&!pet.OfferingGame,"playing real demo audio interrupts an invitation");
-        DueSoon();Pump(350);Need(!pet.OfferingGame&&pet.CurrentActivity!="game","music suppresses additional game invitations");
-        app.Music.ExitDemo();ResetPose();
+        using(var song=new NativeTestSong(state,"邀请测试","桌宠测试"))
+        {
+            Until(()=>app.Music.Title=="邀请测试"&&app.Music.Playing&&!pet.OfferingGame,9500,"native playback interrupts an invitation");
+            DueSoon();Pump(350);Need(!pet.OfferingGame&&pet.CurrentActivity!="game","music suppresses additional game invitations");
+        }
+        Until(()=>!app.Music.Playing,9500,"music detection stops after playback closes");ResetPose();
         app.Data.MaidRoutine=1;GetGame();var cursor=new NativePoint();GetCursorPos(out cursor);
         NativeRect pr;GetWindowRect(petHandle,out pr);
         SetPoint("pressPoint",cursor.X-8,cursor.Y);SetPoint("pressWindow",pr.Left,pr.Top);Put("pressing",true);
@@ -203,18 +188,26 @@ internal static class LifeChecks
     {
         Until(()=>pet.CurrentActivity!="visit" && !app.Windows.OfType<Window>().Any(w=>w.IsVisible && w.Title=="桌边来客"),1800,reason+" closes the active unattended visit and removes guest window");
     }
-    static void VisitAndJournal()
+    static void VisitAndNotes()
     {
+        var written=new NoteItem{Text="明天去书店"};
+        app.Data.Notes.Add(written);
+        var legacy=new MemoryLine{Time=DateTime.UtcNow.Ticks,Text="升级前保存的记录",Automatic=true};
+        app.Data.Journal.Add(legacy);app.Save();
         ScheduleVisit();app.Data.Quiet=true;pet.Sync();GuestGone("quiet mode");app.Data.Quiet=false;pet.Sync();
         ScheduleVisit();app.Open("focus");GuestGone("opening an explicit tool");app.Desk.Hide();Pump(100);
         ScheduleVisit();app.StartFocus(2);GuestGone("active focus");app.CancelFocus();ResetPose();
-        ScheduleVisit();app.Music.StartDemo();GuestGone("playing music");app.Music.ExitDemo();ResetPose();
-        string marker="QA · 留下的用户手记";app.Remember(marker);
-        for(int i=0;i<25;i++)app.RememberActivity("QA · 自动记录 "+i);
-        app.RememberActivity("QA · 自动记录 24");
+        ScheduleVisit();
+        using(var song=new NativeTestSong(state,"来访测试","桌宠测试"))
+        {
+            Until(()=>app.Music.Title=="来访测试"&&app.Music.Playing,9500,"autonomous listener detected visit test music");
+            GuestGone("playing music");
+        }
+        Until(()=>!app.Music.Playing,9500,"music detection releases the visit");ResetPose();
         var saved=Store.Load();
-        Need(saved.Journal.Any(e=>!e.Automatic&&e.Text==marker)&&saved.Journal.Any(e=>!e.Automatic&&e.Text.Contains("猜中了")),"earlier user entries survive 25 later autonomous journal events and reload");
-        Need(saved.Journal.Count(e=>e.Automatic)==18&&saved.Journal.Count(e=>e.Text=="QA · 自动记录 24")==1,"automatic journal entries cap separately and deduplicate the same daily event");
+        Need(saved.Notes.Count==1 && saved.Notes[0].Text==written.Text,"autonomous visits leave user-authored sticky notes untouched");
+        Need(saved.Journal.Count==1 && saved.Journal[0].Text==legacy.Text && saved.Journal[0].Time==legacy.Time,
+            "legacy diary survives upgrade without recording further life events");
     }
     static void CaptureSignature(string character,string action)
     {
@@ -224,7 +217,7 @@ internal static class LifeChecks
             int pose=Array.IndexOf(frames,pet.LiveSprite.Source);
             if(pose<0)throw new Exception(character+" rendered unrelated artwork during "+action);
             if(order.Count==0||order[order.Count-1]!=pose)order.Add(pose);
-            if(seen.Add(pose))GuardedScreenshot(character+"-"+action+"-"+pose);
+            if(seen.Add(pose))CapturePet(character+"-"+action+"-"+pose);
             Pump(27);
         }
         Need(seen.Count==6 && pet.CurrentActivity!=action,character+" completed "+action+" and cleared its action, actual frames "+String.Join(",",order));
@@ -242,15 +235,15 @@ internal static class LifeChecks
         {
             Say("Executable SHA256 "+Hash(File.ReadAllBytes(typeof(Studio).Assembly.Location)));
             app=new Studio(state);app.StartStudio(null);pet=app.Pet;petHandle=new WindowInteropHelper(pet).Handle;Pump(150);
-            Need(pet.IsVisible&&!app.Desk.IsVisible && app.Windows.OfType<Window>().Count(w=>w.IsVisible)==1,"default first launch shows only the desktop pet");BackPet();
-            ObserveFirstTea();ObserveGames();Blockers();VisitAndJournal();CheckArt("rem",false);CheckArt("kurisu",false);
+            Need(pet.IsVisible&&!app.Desk.IsVisible && app.Windows.OfType<Window>().Count(w=>w.IsVisible)==1,"default first launch shows only the desktop pet");
+            ObserveFirstTea();ObserveGames();Blockers();VisitAndNotes();CheckArt("rem",false);CheckArt("kurisu",false);
             bool pending=args.Length<2||!String.Equals(args[1],"True",StringComparison.OrdinalIgnoreCase);
             if(!pending || File.Exists(app.Asset("motion-steve-mine.png"))){CheckArt("steve",true);app.Data.Character="steve";pet.Sync();DueSoon();Until(()=>pet.CurrentActivity=="mine",2200,"Steve autonomously mines using his character-specific schedule");Need(Poses("steve","mine").Contains(pet.LiveSprite.Source),"live Steve sprite is the mining pose");CaptureSignature("steve","mine");Need(app.Data.MinerRoutine==1,"Steve mining progress persists separately from other partners");}
             else Say("Steve is not embedded in this intermediate candidate; pass -RequireSteve for release verification.");
             Say("ALL LIFE CHECKS PASSED");ok=true;
         }
         catch(Exception e){Say("FAIL "+e.GetType().Name+" "+e.Message);Say(e.StackTrace??"");}
-        finally{if(backdrop!=null)backdrop.Close();if(app!=null)try{app.Quit();}catch(Exception e){Say("Cleanup "+e.Message);}File.WriteAllLines(Path.Combine(target,"life-report.txt"),lines.ToArray(),new UTF8Encoding(true));}
+        finally{if(app!=null)try{app.Quit();}catch(Exception e){Say("Cleanup "+e.Message);}File.WriteAllLines(Path.Combine(target,"life-report.txt"),lines.ToArray(),new UTF8Encoding(true));}
         return ok?0:1;
     }
 }

@@ -10,7 +10,7 @@ $params = @('/nologo','/target:winexe','/platform:anycpu','/optimize+','/utf8out
   "/resource:$PSScriptRoot\CardTheme.xaml,DeskMate.CardTheme.xaml",
   '/reference:System.dll','/reference:System.Core.dll','/reference:System.Xml.dll','/reference:System.Xaml.dll',
   '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.IO.Compression.dll','/reference:System.Web.Extensions.dll')
-foreach ($lib in 'WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll','UIAutomationClient.dll','UIAutomationTypes.dll') { $params += "/reference:$framework\WPF\$lib" }
+foreach ($lib in 'WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll','UIAutomationClient.dll','UIAutomationProvider.dll','UIAutomationTypes.dll') { $params += "/reference:$framework\WPF\$lib" }
 foreach ($lib in 'System.Runtime.dll','System.Runtime.WindowsRuntime.dll','System.Runtime.InteropServices.WindowsRuntime.dll','System.Collections.dll') { $params += "/reference:$framework\$lib" }
 $systemMetadata = Join-Path $env:WINDIR 'System32\WinMetadata'
 if ([Environment]::Is64BitOperatingSystem -and $framework -notmatch 'Framework64') { $systemMetadata = Join-Path $env:WINDIR 'Sysnative\WinMetadata' }

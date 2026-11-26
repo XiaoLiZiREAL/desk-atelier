@@ -13,8 +13,8 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace DeskMate
 {
@@ -26,7 +26,9 @@ namespace DeskMate
     }
     public partial class SaveData
     {
+        // Retain old diary entries when upgrading an existing save.
         public List<MemoryLine> Journal = new List<MemoryLine>();
+        public bool ShouldSerializeJournal() { return Journal != null && Journal.Count > 0; }
     }
     internal static class Program
     {
@@ -76,6 +78,7 @@ namespace DeskMate
         public SaveData Data;
         public PetWindow Pet;
         public StudioWindow Desk;
+        public StudioWindow NotesDesk { get; private set; }
         public ListeningRoom Music;
         public string CharacterName { get { return Data.Character == "kurisu" ? "红莉栖" : Data.Character == "steve" ? "史蒂夫" : Data.Character == "rem" ? "蕾姆" : (CustomName(Data.Character) ?? "伙伴"); } }
         readonly string folder;
@@ -165,16 +168,24 @@ namespace DeskMate
         public void Open(string page)
         {
             if (Desk == null) return;
+            if (page != "notes" && NotesDesk != null && NotesDesk.IsVisible && !NotesDesk.KeepsStickyOpen) NotesDesk.Close();
             if(!StudioWindow.SupportsTool(page))
             {
                 if(Desk.IsVisible)Desk.Hide();
                 Pet.Reveal();Pet.ShowQuickMenu();return;
             }
             Pet.OpeningTool();
-            Desk.Go(page);
-            if (!Desk.IsVisible) Desk.Show();
-            if (Desk.WindowState == WindowState.Minimized) Desk.WindowState = WindowState.Normal;
-            Desk.Activate();
+            var card=Desk;
+            if(page=="notes")
+            {
+                if(Desk.IsVisible)Desk.Close();
+                if(NotesDesk==null)NotesDesk=new StudioWindow(this);
+                card=NotesDesk;
+            }
+            card.Go(page);
+            if (!card.IsVisible) card.Show();
+            if (card.WindowState == WindowState.Minimized) card.WindowState = WindowState.Normal;
+            card.Activate();
         }
         public void Save()
         {
@@ -192,30 +203,8 @@ namespace DeskMate
             if (Pet != null) Pet.React(action,text);
             if (Desk != null && !String.IsNullOrWhiteSpace(text)) Desk.ShowStatus(text);
         }
-        public void Remember(string text)
-        {
-            RecordLine(text,false);
-        }
-        public void RememberActivity(string text)
-        {
-            RecordLine(text,true);
-        }
-        void RecordLine(string text,bool automatic)
-        {
-            long now=DateTime.UtcNow.Ticks;
-            if(automatic)
-            {
-                long midnight=DateTime.Today.ToUniversalTime().Ticks;
-                Data.Journal.RemoveAll(entry=>entry.Automatic && entry.Time>=midnight && entry.Text==text);
-            }
-            Data.Journal.Insert(0,new MemoryLine { Time=now,Text=text,Automatic=automatic });
-            int count=0,limit=automatic?18:120;
-            Data.Journal.RemoveAll(entry=>entry.Automatic==automatic && ++count>limit);
-            Save();
-        }
         public void Notify(string message)
         {
-            Remember(message);
             if (Pet != null) { Pet.React("wave",message); Pet.Notice(message); }
             if (Desk != null) Desk.ShowStatus(message);
         }
@@ -226,7 +215,7 @@ namespace DeskMate
             string[] lines;
             if (action == "visit")
             {
-                Pet.Reveal(); Pet.Visit(); Remember((custom ? CharacterName + "和蕾姆" : "蕾姆和红莉栖") + "在桌边见了个面。");
+                Pet.Reveal(); Pet.Visit();
                 Desk.ShowStatus("两位伙伴正在桌面上碰面。"); return;
             }
             if (action == "tea")
@@ -249,7 +238,6 @@ namespace DeskMate
             string words = lines[pick];
             if (!String.IsNullOrWhiteSpace(Data.Nickname) && random.Next(4) == 0) words = Data.Nickname + "，" + words;
             React(action,words);
-            Remember(action == "tea" ? "和" + CharacterName + "喝了杯茶。" : "向" + CharacterName + "打了个招呼。");
         }
         public void Quit()
         {

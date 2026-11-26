@@ -11,20 +11,17 @@ namespace DeskMate
 {
     public sealed partial class PetWindow
     {
-        Button backpackButton, journalButton;
-        readonly ConditionalWeakTable<BitmapSource, PropEdges> frameEdges = new ConditionalWeakTable<BitmapSource, PropEdges>();
+        Button backpackButton;
+        readonly ConditionalWeakTable<BitmapSource, FootEdge> frameEdges = new ConditionalWeakTable<BitmapSource, FootEdge>();
         byte[] scan;
 
-        sealed class PropEdges { public double PaperRight, BagLeft; }
+        sealed class FootEdge { public double Left; }
 
         void InstallAttachments(Grid panel)
         {
             backpackButton = AttachmentButton("打开随身背包", "PetBackpack", BackpackArt(), "bag");
-            journalButton = AttachmentButton("翻开生活手记", "PetJournal", JournalTabArt(), "journal");
-            // Draw both objects behind the character. Its transparent pixels leave them clickable.
             panel.Children.Add(backpackButton);
-            panel.Children.Add(journalButton);
-            sprite.AttachmentAt = point => ContainsSpritePoint(backpackButton, point) || ContainsSpritePoint(journalButton, point);
+            sprite.AttachmentAt = point => ContainsSpritePoint(backpackButton, point);
             RefreshBagAttachment();
         }
 
@@ -60,7 +57,11 @@ namespace DeskMate
             if (backpackButton == null) return;
             int count = app.Data.Bag.Count;
             backpackButton.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
-            if (count > 0) backpackButton.ToolTip = "随身背包 · " + count + " 项";
+            if (count > 0)
+            {
+                backpackButton.ToolTip = "随身背包 · " + count + " 项";
+                PositionAttachments();
+            }
         }
 
         bool ContainsSpritePoint(Button button, Point spritePoint)
@@ -68,29 +69,26 @@ namespace DeskMate
             return button.IsVisible && new Rect(button.RenderSize).Contains(sprite.TranslatePoint(spritePoint, button));
         }
 
-        PropEdges EdgesOf(BitmapSource frame)
+        double LeftFootEdge(BitmapSource frame)
         {
-            PropEdges edges;
-            if (frameEdges.TryGetValue(frame, out edges)) return edges;
+            FootEdge cached;
+            if (frameEdges.TryGetValue(frame, out cached)) return cached.Left;
             BitmapSource pixels = PetSprite.Readable(frame);
             int w = pixels.PixelWidth, h = pixels.PixelHeight, stride = 4*w;
-            // Both props sit by the feet. Only read the lower band of each pose.
-            int first = (int)(.74*h), ankle = (int)(.83*h), last = Math.Min(h-1, (int)(.95*h));
+            // The backpack sits by the feet. Only read the lower band of each pose.
+            int first = (int)(.74*h), last = Math.Min(h-1, (int)(.95*h));
             int bytes = (last-first+1)*stride;
             if (scan == null || scan.Length < bytes) scan = new byte[bytes];
             pixels.CopyPixels(new Int32Rect(0, first, w, last-first+1), scan, stride, 0);
-            int right = 0, left = w;
+            int left = w;
             for (int y=first; y<=last; y++)
             {
                 for (int x=0; x<left; x++)
                     if (scan[(y-first)*stride + 4*x+3] >= 32) { left=x; break; }
-                if (y<ankle) continue;
-                for (int x=w-1; x>=right; x--)
-                    if (scan[(y-first)*stride + 4*x+3] >= 32) { right=x+1; break; }
             }
-            edges = new PropEdges { PaperRight = right==0 ? .58 : (double)right/w, BagLeft = (double)left/w };
-            frameEdges.Add(frame, edges);
-            return edges;
+            double fraction = (double)left / w;
+            frameEdges.Add(frame, new FootEdge { Left = fraction });
+            return fraction;
         }
 
         void PresentFrame(BitmapSource frame)
@@ -102,34 +100,25 @@ namespace DeskMate
 
         double AttachmentGutter()
         {
-            // Even a completely opaque imported frame has room to expose both handles.
-            return 3 + Math.Max(.82 * Math.Max(29, 38*scale), .77 * Math.Max(32, 39*scale));
+            return 3 + .82 * Math.Max(29, 38*scale);
         }
 
         void PositionAttachments()
         {
             var frame = sprite.Source as BitmapSource;
-            if (backpackButton == null || scale <= 0 || frame == null) return;
-            var current = EdgesOf(frame);
+            if (backpackButton == null || backpackButton.Visibility != Visibility.Visible || scale <= 0 || frame == null) return;
             double spriteLeft = (Width - sprite.Width)/2;
-            double tabWidth = Math.Max(32, 39 * scale), tabHeight = tabWidth * 37 / 45;
-            journalButton.Width = tabWidth;
-            journalButton.Height = tabHeight;
-            double tabLeft = spriteLeft + sprite.Width * current.PaperRight - tabWidth * .27;
-
             double bagWidth = Math.Max(29, 38 * scale);
             backpackButton.Width = bagWidth;
             backpackButton.Height = bagWidth * 48 / 44;
             double bagLeft = Math.Min(Width / 2 - sprite.Width * .205 - bagWidth,
-                spriteLeft + sprite.Width * current.BagLeft - bagWidth * .82);
+                spriteLeft + sprite.Width * LeftFootEdge(frame) - bagWidth * .82);
             if (gameStage != null && gameStage.IsVisible)
             {
                 const double chestRowWidth = 3 * (39 + 2 * 2);
                 bagLeft = Math.Min(bagLeft, (Width - chestRowWidth) / 2 - bagWidth - 3);
-                tabLeft = Math.Max(tabLeft, (Width + chestRowWidth) / 2 + 3);
             }
             double ground = Math.Max(2, 3 * scale);
-            journalButton.Margin = new Thickness(Math.Min(tabLeft, Width - tabWidth - 2), 0, 0, ground);
             backpackButton.Margin = new Thickness(Math.Max(2, bagLeft), 0, 0, ground);
         }
 
@@ -184,19 +173,6 @@ namespace DeskMate
                 LineJoin = PenLineJoin.Round, StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round
             };
             dc.DrawGeometry(fill == null ? null : Ui.Color(fill), pen, Geometry.Parse(path));
-        }
-
-        static DrawingImage JournalTabArt()
-        {
-            return MakeDrawing(45, 37, delegate(DrawingContext dc) {
-                DrawPart(dc, "#95B8C9", "#475C68", 1.1, "M5,10 L35,8 39,29 8,33 Z");
-                DrawPart(dc, "#DFA39C", "#825B57", 1, "M5,9 L35,6 40,26 9,32 Z");
-                DrawPart(dc, "#FFE397", "#806334", 1.25, "M3,10 L32,3 39,7 43,24 8,32 Z");
-                DrawPart(dc, "#FFF3CB", "#AA894D", .8, "M32,3 L33.3,9 39,7 Z");
-                DrawPart(dc, null, "#FFF4CF", 1.15, "M7,11 L30,5.6");
-                DrawPart(dc, null, "#977543", 1, "M18,17 L35,13 M20,21 L32,18.2");
-                dc.DrawEllipse(Ui.Color("#CCAD6D"), new Pen(Ui.Color("#95733D"), .7), new Point(11, 16), 1.8, 1.8);
-            });
         }
 
         static DrawingImage BackpackArt()

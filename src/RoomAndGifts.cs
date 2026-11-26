@@ -538,7 +538,7 @@ namespace DeskMate
                 return Ui.Card(Pile(12,Heading(sender+" 送来了一份礼物"),Copy("“"+pending.Message+"”"),
                     new RoomScene(pending,RoomSprite(),null,null),Copy(ThemeName(pending.Theme)+" · "+string.Join("、",Enumerable.Range(0,3).Where(i=>pending.Visible[i]).Select(i=>ObjectNames[i]).DefaultIfEmpty("空房间"))),
                     Copy("收下后会换成预览中的房间配色、家具和摆放位置。"),
-                    Actions(Ui.Button("收下并布置",delegate{pending.Apply(app.Data);app.Remember("收到了"+sender+"送来的桌边礼物。");incoming=null;roomStatus="礼物已布置好。";giftStatus="已收到 "+sender+" 的礼物。";app.React("gift",pending.Message);Go("room");},true),
+                    Actions(Ui.Button("收下并布置",delegate{pending.Apply(app.Data);app.Save();incoming=null;roomStatus="礼物已布置好。";giftStatus="已收到 "+sender+" 的礼物。";app.React("gift",pending.Message);Go("room");},true),
                         Ui.Button("暂时不收",delegate{incoming=null;giftStatus="已合上这份礼物。";RefreshPage();}))));
             }
             var senderInput=Ui.Input(giftSender??app.Data.GiftFrom);senderInput.MaxLength=32;
@@ -558,7 +558,7 @@ namespace DeskMate
                 catch(Exception e){giftStatus="保存失败。"+e.Message;status.Text=giftStatus;}
             },true);
             return Pile(13,Ui.Card(Pile(9,Heading("给朋友寄一个房间"),Copy("当前房间的配色、家具位置和你写的卡片会一起装进礼物包。把礼物文件发给朋友，对方打开「礼物邮局」即可拆开。"),
-                Copy("署名（选填）"),senderInput,Copy("给朋友的话"),note,Actions(export),status)),
+                Copy("署名（选填）"),senderInput,Copy("给朋友的话"),note,Actions(export,Ui.Button("布置礼物房间",delegate{Go("room");})),status)),
                 Ui.Card(Pile(10,Heading("拆一份礼物"),Copy("选中朋友发来的 .deskpet 文件，先看卡片和房间，再决定是否收下。"),
                     Ui.Button("打开 .deskpet 礼物",delegate{var dlg=new OpenFileDialog{Title="打开桌边礼物",Filter="桌边礼物|*.deskpet",CheckFileExists=true};if(dlg.ShowDialog(this)==true)PreviewGift(dlg.FileName);}),
                     string.IsNullOrEmpty(app.Data.LastGift)?null:Copy("上次收到的卡片 · "+app.Data.LastGift))));

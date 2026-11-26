@@ -1,22 +1,20 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Windows.Media;
-using Windows.Media.Playback;
 using DeskMate;
+using Forms = System.Windows.Forms;
 
 internal static class MusicChecks
 {
@@ -43,26 +41,36 @@ internal static partial class Integration
         {
             using(var sha=SHA256.Create())using(var input=File.OpenRead(typeof(Studio).Assembly.Location))
                 Say("Build SHA256  "+BitConverter.ToString(sha.ComputeHash(input)).Replace("-",""));
-            app=new Studio(stateDir);app.Data.HideFullscreen=false;app.Data.Quiet=false;app.Data.PreferredPlayer="kugou";
-            app.Data.LyricFolder=localLibrary;app.Data.OnlineLyrics=false;app.Save();
-            app.StartStudio(null);Pump(350);Nav("music","听歌陪伴");
-            Check(app.Music!=null&&app.Desk.CurrentTool=="music","Compiled studio opened its real music workspace");
-            if(args.Skip(2).Contains("--picker-only"))
-            {
-                string sample=Path.Combine(stateDir,"picker.lrc");
-                File.WriteAllText(sample,"[ti:选择文件验收]\n[00:00]通过窗口导入",Encoding.UTF8);
-                ImportWithPicker(sample);Until(()=>app.Music.Title=="选择文件验收"&&app.Music.CurrentLine=="通过窗口导入","System file picker imported LRC through the application's normal entry");
-                return 0;
-            }
-            TestManualAndDemo();TestNativeTimeline();TestWindowLyric();
+            app=new Studio(stateDir);
+            Check(app.Data.SingAlongEnabled,"Fresh profile automatically enables listening");
+            Check(!app.Data.OnlineLyrics&&!app.Data.ReadLyricWindow,"Both optional lyric permissions default off");
+            app.Data.HideFullscreen=false;app.Data.Quiet=false;app.Data.PetWelcomeSeen=true;
+            app.Data.SingAlongEnabled=false;app.Data.PreferredPlayer="kugou";
+            app.Data.LyricFolder=localLibrary;app.Data.OnlineLyrics=true;app.Data.ReadLyricWindow=true;app.Save();
+            app.StartStudio(null);Pump(350);
+            Check(app.Music!=null&&!StudioWindow.SupportsTool("music")&&!app.Desk.IsVisible,"Listening no longer opens a tool window");
+            Nav("settings");Expand("歌词隐私");
+            Check(LyricPermission("联网匹配同步歌词").IsChecked==true&&LyricPermission("识别播放器的歌词画面").IsChecked==true,
+                "Existing lyric permissions remain visible and individually revocable");
+            SetPermission("联网匹配同步歌词",false);SetPermission("识别播放器的歌词画面",false);app.Desk.Hide();
+            Check(!Store.Load().OnlineLyrics&&!Store.Load().ReadLyricWindow&&!app.Data.SingAlongEnabled,
+                "Settings persist individual revocation while the music master switch is off");
+            var tray=(Forms.ContextMenuStrip)typeof(PetWindow).GetField("menu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(app.Pet);
+            var traySwitch=tray.Items.OfType<Forms.ToolStripMenuItem>().Single(i=>i.Text=="听音乐");
+            Check(!traySwitch.Checked,"Tray reflects the saved off setting at startup");
+            SwitchFromMenu(false,"01-switch-off");
+            Check(traySwitch.Checked&&Store.Load().SingAlongEnabled,"Right-click switch enables and saves background listening");
+            traySwitch.PerformClick();Pump(90);
+            Check(!app.Data.SingAlongEnabled&&!Store.Load().SingAlongEnabled&&!app.Desk.IsVisible,"Tray switch disables listening without opening a card");
+            SwitchFromMenu(false,null);
+            TestNativeTimeline();TestWindowLyric();
             var disk=Store.Load();
-            Check(disk.SingAlongEnabled&&!disk.OnlineLyrics&&!disk.Quiet&&disk.LyricFolder==localLibrary,"Settings and selected lyric folder persisted without networking");
+            Check(disk.SingAlongEnabled&&!disk.OnlineLyrics&&!disk.Quiet&&disk.LyricFolder==localLibrary,"Lyrics settings and selected folder survive the upgrade");
             app.Quit();
-            Check(app.Exiting && !app.Pet.KaraokeVisible,"Quit closed the companion's lyric window");
+            Check(app.Exiting && !app.Pet.KaraokeVisible,"Quit closes the companion's lyric window");
             Say("ALL MUSIC INTEGRATION CHECKS PASSED");good=true;
         }
-        catch(Exception e)
-        {Say("FAIL  "+e.GetType().Name+"  "+e.Message);Say(e.StackTrace);try{Capture(app.Desk,"failed-music");}catch{}}
+        catch(Exception e){Say("FAIL  "+e.GetType().Name+"  "+e.Message);Say(e.StackTrace);}
         finally
         {
             if(app!=null&&!app.Exiting)try{app.Quit();}catch{}
@@ -77,173 +85,129 @@ internal static partial class Integration
         while(!test()&&clock.ElapsedMilliseconds<timeout)Pump(90);
         if(!test())throw new Exception(label+" timeout. Source="+app.Music.Connection+", titleMatchesFixture="+
             (app.Music.Title==FirstTrack||app.Music.Title==SecondTrack||app.Music.Title=="窗边验收歌")+
-            ", status="+app.Music.Status+", visible="+app.Pet.KaraokeVisible+", playback="+app.Music.Playing+", time="+app.Music.TimeLabel);
+            ", visible="+app.Pet.KaraokeVisible+", playback="+app.Music.Playing+", time="+app.Music.TimeLabel);
         Check(true,label);
     }
-    static void SetCheck(string name,bool value)
+
+    static void SwitchFromMenu(bool before,string screenshot)
     {
-        if(name=="联网查找时间轴歌词"||name=="读取播放器的画面歌词")Expand("歌词来源"); var box=Elements<CheckBox>().First(b=>Equals(b.Content,name));box.BringIntoView();
-        box.IsChecked=value;box.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent,box));Pump(85);
-    }
-    static void Source(int index)
-    {
-        Expand("播放器");var select=Elements<ComboBox>().First(b=>AutomationProperties.GetName(b)=="优先识别的音乐播放器");
-        select.SelectedIndex=index;Pump(100);
-    }
-    static void Top()
-    {
-        var scrolls=Elements<ScrollViewer>();
-        foreach(var viewer in scrolls)if(viewer.ViewportWidth>300)viewer.ScrollToTop();
-        Pump(100);
-    }
-    static void TestManualAndDemo()
-    {
-        SetCheck("桌宠跟唱字幕",false);
-        SetCheck("联网查找时间轴歌词",true);Check(app.Data.OnlineLyrics,"Online setting toggled while recognition disabled");
-        SetCheck("读取播放器的画面歌词",true);Check(app.Data.ReadLyricWindow,"Explicit local screenshot recognition setting is switchable");SetCheck("读取播放器的画面歌词",false);
-        SetCheck("联网查找时间轴歌词",false);SetCheck("桌宠跟唱字幕",true);
-        Source(3);Until(()=>!app.Music.HasTrack,"Manual checks started without a player track");
-        Expand("歌词来源");Click("粘贴歌词");
-        var pasted=Elements<TextBox>().Single(x=>AutomationProperties.GetName(x)=="带时间标签的 LRC 歌词");
-        pasted.Text="[ti:手写验收]\n[ar:窗边工作室]\n[00:00]第一张卡片\n[00:03]第二张卡片\n[00:08]第三张卡片";
-        Click("使用这份歌词");
-        Until(()=>app.Music.Title=="手写验收"&&app.Music.ManualActive&&!app.Music.Playing,"Pasted LRC opens a paused standalone song with parsed metadata");
-        Expand("字幕校时");var time=Elements<TextBox>().Single(x=>AutomationProperties.GetName(x).StartsWith("播放器当前进度"));
-        time.Text="00:04";Click("从此刻计时");
-        Until(()=>app.Music.CurrentLine=="第二张卡片"&&app.Music.Playing,"Manual time input starts at the actual requested line");
-        Click("暂停手动计时");var held=app.Music.TimeLabel;Pump(1250);
-        Check(!app.Music.Playing&&held==app.Music.TimeLabel&&app.Music.CurrentLine=="第二张卡片","Pause freezes manual progress and keeps the current line");
-        Click("继续手动计时");Click("+0.5 秒");Check(app.Music.OffsetMs==500,"Manual calibration persists +500 ms");Click("归零");
-        Click("结束手动计时");Until(()=>!app.Music.HasTrack,"Ending standalone timing clears the pasted song");
-        string path=Path.Combine(stateDir,"手写本地歌词.lrc");
-        File.WriteAllText(path,"[ti:纸页样本]\n[ar:验收工坊]\n[00:00]文件中的开头\n[00:03]校时落在这里",Encoding.UTF8);
-        ImportWithPicker(path);
-        Until(()=>app.Music.Title=="纸页样本"&&app.Music.CurrentLine=="文件中的开头"&&app.Music.ManualActive,"Native file picker imported an LRC from the normal UI and entered standalone timing");
-        time=Elements<TextBox>().Single(x=>AutomationProperties.GetName(x).StartsWith("播放器当前进度"));
-        time.Text="00:05";Click("从此刻计时");Until(()=>app.Music.CurrentLine=="校时落在这里","Imported-file timeline honors manual seek");
-        Click("暂停手动计时");Click("结束手动计时");
-        var editor=Find("收起输入框"); if(editor!=null)Click(editor); Expand("播放器",false);Expand("歌词来源",false);Expand("字幕校时",false);Click("试听 18 秒演示");
-        Until(()=>app.Music.IsDemo&&app.Music.CurrentLine=="窗边响起第一声"&&app.Pet.KaraokeVisible,"Bundled original WAV and its first stamped lyric render in the real companion");
-        Top();Capture(app.Desk,"01-music-demo");SavePetAndPanel("02-desktop-demo");
-        Click("退出内置演示");Until(()=>!app.Music.IsDemo&&app.Music.CurrentLine=="","Stopping built-in demo removes its stale caption");
+        var menu=Quick();Pump(90);menu.UpdateLayout();
+        var item=menu.Items.OfType<MenuItem>().Single(i=>Equals(i.Header,"听音乐"));
+        Check(item.IsCheckable && item.IsChecked==before,"Menu switch shows the stored "+(before?"on":"off")+" state");
+        if(screenshot!=null)
+        {
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth),(int)Math.Ceiling(menu.ActualHeight),96,96,PixelFormats.Pbgra32);
+            bitmap.Render(menu);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using(var file=File.Create(Path.Combine(screenDir,screenshot+".png")))encoder.Save(file);
+        }
+        var peer=new MenuItemAutomationPeer(item);
+        var toggle=(IToggleProvider)peer.GetPattern(PatternInterface.Toggle);
+        toggle.Toggle();
+        menu.IsOpen=false;Pump(110);
+        Check(app.Data.SingAlongEnabled!=before&&!app.Desk.IsVisible,"Native menu toggle changes the background service without a workspace");
     }
 
-    [DllImport("user32.dll")]static extern bool PostMessage(IntPtr hwnd,uint message,IntPtr w,IntPtr l);
-    [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern IntPtr FindWindow(string cls,string title);
-    [DllImport("user32.dll")]static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
-    static void ImportWithPicker(string path)
+    static CheckBox LyricPermission(string label)
     {
-        uint pid=(uint)Process.GetCurrentProcess().Id;
-        var automation=Task.Run(delegate
+        return Elements<CheckBox>().Single(b=>Equals(b.Content,label));
+    }
+
+    static void SetPermission(string label,bool value)
+    {
+        var box=LyricPermission(label);
+        box.BringIntoView();box.IsChecked=value;box.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent,box));
+    }
+
+    static void TestLivePrivacy()
+    {
+        var fields=BindingFlags.Instance|BindingFlags.NonPublic;
+        var watcher=(MediaWatcher)typeof(ListeningRoom).GetField("watcher",fields).GetValue(app.Music);
+        var field=typeof(ListeningRoom).GetField("library",fields);
+        var original=(LyricsLibrary)field.GetValue(app.Music);
+        using(var started=new ManualResetEventSlim())
+        using(var cancelled=new ManualResetEventSlim())
         {
-            IntPtr hwnd=IntPtr.Zero;
+            // Use an offline responder so this test can observe cancellation without contacting LRCLIB.
+            var testLibrary=new LyricsLibrary(stateDir,delegate(Uri uri,CancellationToken token){
+                started.Set();
+                if(!token.WaitHandle.WaitOne(5000))throw new TimeoutException("Privacy switch did not cancel the lookup");
+                cancelled.Set();
+                return "{\"trackName\":\"纸船出发\",\"artistName\":\"窗边手记\",\"duration\":120,\"syncedLyrics\":\"[00:00]撤回后的结果\"}";
+            });
+            field.SetValue(app.Music,testLibrary);
             try
             {
-                var clock=Stopwatch.StartNew();
-                while(clock.ElapsedMilliseconds<9500)
-                {
-                    IntPtr found=FindWindow("#32770","选择带时间标签的歌词");uint owner;
-                    if(found!=IntPtr.Zero&&GetWindowThreadProcessId(found,out owner)!=0&&owner==pid){hwnd=found;break;}
-                    Thread.Sleep(70);
-                }
-                if(hwnd==IntPtr.Zero)throw new Exception("Owned file picker was not available");
-                var dialog=AutomationElement.FromHandle(hwnd);
-                AutomationElement input=null;
-                var ready=Stopwatch.StartNew();
-                while(input==null&&ready.ElapsedMilliseconds<6000)
-                {
-                    var controls=dialog.FindAll(TreeScope.Descendants,new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit)).Cast<AutomationElement>().ToList();
-                    input=controls.FirstOrDefault(c=>c.Current.Name.Contains("文件名")||c.Current.Name.IndexOf("file name",StringComparison.OrdinalIgnoreCase)>=0) ??
-                        controls.FirstOrDefault(c=>c.Current.AutomationId=="1001");
-                    if(input==null)Thread.Sleep(100);
-                }
-                if(input==null)throw new Exception("Native picker filename field unavailable");
-                ((ValuePattern)input.GetCurrentPattern(ValuePattern.Pattern)).SetValue(path);
-                var open=dialog.FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Button),new PropertyCondition(AutomationElement.AutomationIdProperty,"1")));
-                if(open==null)throw new Exception("Native picker Open control unavailable");
-                ((InvokePattern)open.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+                Nav("settings");Expand("歌词隐私");
+                SetPermission("识别播放器的歌词画面",true);
+                Check(watcher.ReadLyricWindow&&!app.Data.OnlineLyrics,"OCR can be enabled independently on the active watcher");
+                SetPermission("联网匹配同步歌词",true);
+                Until(()=>started.IsSet,"Opting into network lookup starts matching the current song");
+                SetPermission("联网匹配同步歌词",false);
+                Until(()=>cancelled.IsSet&&app.Music.CurrentLine=="","Revoking network access cancels the active request and drops its late response");
+                SetPermission("识别播放器的歌词画面",false);
+                Check(!watcher.ReadLyricWindow&&!Store.Load().ReadLyricWindow&&app.Music.Playing,"Revoking OCR immediately updates the watcher while playback keeps running");
             }
-            catch
-            {if(hwnd!=IntPtr.Zero)PostMessage(hwnd,0x10,IntPtr.Zero,IntPtr.Zero);throw;}
-        });
-        Expand("歌词来源");Click("导入 LRC 文件");automation.GetAwaiter().GetResult();
+            finally
+            {
+                if(app.Data.OnlineLyrics)SetPermission("联网匹配同步歌词",false);
+                field.SetValue(app.Music,original);
+                app.Desk.Hide();
+            }
+        }
     }
 
-    static void NativeTrack(SystemMediaTransportControls smtc,string title)
-    {
-        smtc.DisplayUpdater.Type=MediaPlaybackType.Music;
-        smtc.DisplayUpdater.MusicProperties.Title=title;smtc.DisplayUpdater.MusicProperties.Artist=FixtureArtist;smtc.DisplayUpdater.Update();
-    }
-    static void NativeTime(SystemMediaTransportControls smtc,double seconds)
-    {
-        smtc.UpdateTimelineProperties(new SystemMediaTransportControlsTimelineProperties{StartTime=TimeSpan.Zero,MinSeekTime=TimeSpan.Zero,
-            MaxSeekTime=TimeSpan.FromMinutes(2),EndTime=TimeSpan.FromMinutes(2),Position=TimeSpan.FromSeconds(seconds)});
-    }
-    static string SilentWav()
-    {
-        string path=Path.Combine(stateDir,"original-silent-test.wav");int length=120*8000*2;
-        using(var w=new BinaryWriter(File.Create(path)))
-        {
-            w.Write(Encoding.ASCII.GetBytes("RIFF"));w.Write(36+length);w.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
-            w.Write(16);w.Write((short)1);w.Write((short)1);w.Write(8000);w.Write(16000);w.Write((short)2);w.Write((short)16);
-            w.Write(Encoding.ASCII.GetBytes("data"));w.Write(length);w.Write(new byte[length]);
-        }
-        return path;
-    }
     static void TestNativeTimeline()
     {
-        Source(0);
-        using(var player=new Windows.Media.Playback.MediaPlayer())
+        using(var song=new NativeTestSong(stateDir,FirstTrack,FixtureArtist))
         {
-            player.Volume=0;player.CommandManager.IsEnabled=false;
-            player.Source=Windows.Media.Core.MediaSource.CreateFromUri(new Uri(SilentWav()));player.Play();
-            var smtc=player.SystemMediaTransportControls;smtc.IsEnabled=true;smtc.IsPauseEnabled=true;smtc.IsPlayEnabled=true;
-            try
-            {
-                NativeTrack(smtc,FirstTrack);smtc.PlaybackStatus=MediaPlaybackStatus.Playing;NativeTime(smtc,12);
-                Until(()=>app.Music.Title==FirstTrack&&app.Music.Artist==FixtureArtist&&app.Music.HasTimeline&&app.Music.CurrentLine=="窗沿落下一点光"&&app.Music.Connection.Contains("Windows"),"Real Windows session + selected Chinese-named LRC resolve title, artist and exact lyric");
-                Until(()=>app.Pet.KaraokeMoving&&app.Pet.KaraokeVisible&&app.Pet.KaraokeLyric==app.Music.CurrentLine,"Playing native media animates companion and matches the visible lyric");
-                var editor=Find("收起输入框");if(editor!=null)Click(editor);Expand("播放器",false);Expand("歌词来源",false);Expand("字幕校时",false);Top();Capture(app.Desk,"03-music-native");SavePetAndPanel("04-desktop-native");
-                player.Pause();player.PlaybackSession.Position=TimeSpan.FromSeconds(26);smtc.PlaybackStatus=MediaPlaybackStatus.Paused;NativeTime(smtc,26);
-                Until(()=>!app.Music.Playing&&app.Music.CurrentLine=="灯影在纸上慢下来"&&!app.Pet.KaraokeMoving,"Native pause updates line and stops the singing motion");
-                string pinned=app.Music.TimeLabel;Pump(1150);
-                Check(app.Music.TimeLabel==pinned&&app.Music.CurrentLine=="灯影在纸上慢下来","Paused Windows time and line stay fixed across UI ticks");
-                player.PlaybackSession.Position=TimeSpan.FromSeconds(54);NativeTime(smtc,54);
-                Until(()=>app.Music.CurrentLine=="翻向下一页"&&!app.Music.Playing&&Math.Abs(player.PlaybackSession.Position.TotalSeconds-54)<1,
-                    "A real MediaPlayer seek while paused moves to the later LRC segment");
-                player.Play();smtc.PlaybackStatus=MediaPlaybackStatus.Playing;NativeTime(smtc,54);
-                Until(()=>app.Music.Playing&&app.Pet.KaraokeMoving,"Native resume restarts motion");
-                Nav("settings","伙伴设置");SetCheck("安静陪伴，暂停主动活动和字幕",true);
-                Until(()=>!app.Pet.KaraokeVisible&&!app.Pet.KaraokeMoving,"Quiet mode hides lyrics and stops motion");
-                SetCheck("安静陪伴，暂停主动活动和字幕",false);Until(()=>app.Pet.KaraokeVisible,"Leaving quiet mode restores live caption");
-                Nav("music","听歌陪伴");app.Desk.Close();Pump(300);
-                Check(!app.Desk.IsVisible&&app.Music.HasTrack&&app.Music.Playing,"Closing the workspace leaves native synchronization running"); Until(()=>app.Pet.KaraokeVisible,"Resident lyric returns after the first-close instruction bubble",12000);
-                app.Open("music");Pump(120);
-                NativeTrack(smtc,SecondTrack);player.PlaybackSession.Position=TimeSpan.FromSeconds(1);NativeTime(smtc,1);
-                Until(()=>app.Music.Title==SecondTrack&&String.IsNullOrEmpty(app.Music.CurrentLine)&&!app.Pet.KaraokeVisible,"Track change clears previous line and overlay for an unbound song");
-            }
-            finally{smtc.PlaybackStatus=MediaPlaybackStatus.Closed;smtc.IsEnabled=false;player.Pause();}
+            var player=song.Player;
+            song.Position(12);
+            Until(()=>app.Music.Title==FirstTrack&&app.Music.Artist==FixtureArtist&&app.Music.HasTimeline&&app.Music.CurrentLine=="窗沿落下一点光"&&app.Music.Connection=="smtc",
+                "Real Windows session and local LRC resolve automatically despite the legacy single-provider preference");
+            Until(()=>app.Pet.KaraokeMoving&&app.Pet.KaraokeVisible&&app.Pet.KaraokeLyric==app.Music.CurrentLine,"Playing native media animates the pet with the matching lyric");
+            SavePetAndPanel("04-desktop-native");
+            player.Pause();player.PlaybackSession.Position=TimeSpan.FromSeconds(26);
+            song.Controls.PlaybackStatus=MediaPlaybackStatus.Paused;song.Position(26);
+            Until(()=>!app.Music.Playing&&app.Music.CurrentLine=="灯影在纸上慢下来"&&!app.Pet.KaraokeMoving,"Native pause updates the current line and stops singing");
+            string held=app.Music.TimeLabel;Pump(1150);
+            Check(app.Music.TimeLabel==held&&app.Music.CurrentLine=="灯影在纸上慢下来","Paused media keeps its exact lyric");
+            player.PlaybackSession.Position=TimeSpan.FromSeconds(54);song.Position(54);
+            Until(()=>app.Music.CurrentLine=="翻向下一页"&&!app.Music.Playing,"Seeking paused media updates its synchronized subtitle");
+            player.Play();song.Controls.PlaybackStatus=MediaPlaybackStatus.Playing;song.Position(54);
+            Until(()=>app.Music.Playing&&app.Pet.KaraokeMoving,"Native resume restarts the motion");
+            Nav("settings");
+            var quiet=Elements<CheckBox>().Single(b=>Equals(b.Content,"安静陪伴，暂停主动活动和字幕"));
+            quiet.IsChecked=true;quiet.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent,quiet));
+            Until(()=>!app.Pet.KaraokeMoving&&!app.Pet.KaraokeVisible,"Quiet mode suppresses the caption and motion");
+            quiet.IsChecked=false;quiet.RaiseEvent(new RoutedEventArgs(CheckBox.ClickEvent,quiet));app.Desk.Hide();
+            Until(()=>app.Pet.KaraokeVisible,"Leaving quiet mode restores live captions");
+            SwitchFromMenu(true,"02-switch-on");
+            Check(!app.Music.HasTrack&&!app.Music.Playing&&!app.Pet.KaraokeVisible&&!app.Pet.KaraokeMoving,"Disabling listening immediately clears the track, caption and animation");
+            Pump(1300);
+            Check(!app.Pet.KaraokeVisible&&!app.Music.HasTrack&&!Store.Load().SingAlongEnabled,"An outstanding media sample cannot repopulate a disabled listener");
+            SwitchFromMenu(false,null);
+            Until(()=>app.Music.Title==FirstTrack&&app.Music.Playing&&app.Pet.KaraokeVisible,"Re-enabling detects the still-playing session without reopening the player");
+            song.Track(SecondTrack,FixtureArtist);player.PlaybackSession.Position=TimeSpan.FromSeconds(1);song.Position(1);
+            Until(()=>app.Music.Title==SecondTrack&&String.IsNullOrEmpty(app.Music.CurrentLine)&&!app.Pet.KaraokeVisible,"Changing to a song without lyrics clears the old caption");
+            TestLivePrivacy();
         }
     }
 
     static void TestWindowLyric()
     {
-        if(nativeFixture==null||!File.Exists(nativeFixture))throw new FileNotFoundException("QQ-shaped UIA fixture required",nativeFixture);
-        Source(2);
+        if(nativeFixture==null||!File.Exists(nativeFixture))throw new FileNotFoundException("QQ-shaped accessibility fixture required",nativeFixture);
         string sentinel=Path.Combine(stateDir,"end-window-fixture.signal");
         using(var helper=Process.Start(new ProcessStartInfo{FileName=nativeFixture,Arguments="--hold \""+sentinel+"\"",UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden}))
         {
             try
             {
-                Until(()=>app.Music.Title=="窗边验收歌"&&app.Music.Artist=="验收伙伴"&&app.Music.Connection.Contains("窗口")&&app.Music.CurrentLine=="雨滴敲着窗沿",
-                    "Native accessibility fixture supplies QQ-shaped player metadata and dedicated desktop lyric without an LRC");
-                Until(()=>app.Music.PlayerLabel=="QQ 音乐"&&app.Pet.KaraokeLyric=="雨滴敲着窗沿"&&app.Pet.KaraokeVisible,
-                    "Live desktop lyric reaches the companion independently of timed local lyrics");
-                Top();Capture(app.Desk,"05-music-window");
+                Until(()=>app.Music.Title=="窗边验收歌"&&app.Music.Artist=="验收伙伴"&&app.Music.Connection=="window"&&app.Music.CurrentLine=="雨滴敲着窗沿",
+                    "Auto recognition picks up QQ-style player metadata and live desktop lyrics without a local file");
+                Until(()=>app.Music.PlayerLabel=="qq"&&app.Pet.KaraokeLyric=="雨滴敲着窗沿"&&app.Pet.KaraokeVisible,
+                    "Live accessible desktop lyrics reach the companion independently of a timeline");
             }
             finally{File.WriteAllText(sentinel,"finished");var watch=Stopwatch.StartNew();while(!helper.HasExited&&watch.ElapsedMilliseconds<4000)Pump(75);}
         }
-        Source(0);
     }
     static void SavePetAndPanel(string name)
     {
@@ -269,8 +233,3 @@ internal static partial class Integration
         Say("PNG   "+name+"  "+result.PixelWidth+"x"+result.PixelHeight+" separate real layered windows");
     }
 }
-
-
-
-
-

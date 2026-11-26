@@ -2,67 +2,25 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Forms = System.Windows.Forms;
 
 namespace DeskMate
 {
-    sealed class FocusDial : FrameworkElement
-    {
-        double remaining = 1;
-        bool paused;
-        public FocusDial() { Width=72;Height=72;IsHitTestVisible=false; }
-        public void Update(double fraction,bool isPaused)
-        {
-            fraction=Math.Max(0,Math.Min(1,fraction));
-            if(fraction==remaining && paused==isPaused)return;
-            remaining=fraction;paused=isPaused;InvalidateVisual();
-        }
-        static Point OnDial(double angle,double radius)
-        {
-            return new Point(36+Math.Sin(angle)*radius,36-Math.Cos(angle)*radius);
-        }
-        protected override void OnRender(DrawingContext dc)
-        {
-            var center=new Point(36,36);
-            var ticks=new Pen(Ui.Color("#ACBED1"),1);
-            for(int n=0;n<24;n++){double angle=n*Math.PI/12;dc.DrawLine(ticks,OnDial(angle,n%2==0?28:30),OnDial(angle,32));}
-            dc.DrawEllipse(null,new Pen(Ui.Color("#D6E2EE"),3),center,23,23);
-            var stroke=new Pen(Ui.Color(paused?"#8394A8":Ui.Accent),3){StartLineCap=PenLineCap.Round,EndLineCap=PenLineCap.Round};
-            if(remaining>=1)dc.DrawEllipse(null,stroke,center,23,23);
-            else if(remaining>0){
-                var arc=new StreamGeometry();
-                using(var geometry=arc.Open()){
-                    geometry.BeginFigure(OnDial(0,23),false,false);
-                    geometry.ArcTo(OnDial(remaining*2*Math.PI,23),new Size(23,23),0,remaining>.5,SweepDirection.Clockwise,true,false);
-                }
-                dc.DrawGeometry(null,stroke,arc);
-            }
-            dc.DrawLine(stroke,center,OnDial(remaining*2*Math.PI,15));
-            dc.DrawEllipse(stroke.Brush,null,center,2,2);
-        }
-    }
-
     public partial class StudioWindow
     {
         const string ToolInk = Ui.Ink;
         const string ToolMuted = Ui.Muted;
         const string ToolAccent = Ui.Accent;
-        TextBlock focusClock, focusState, focusCaption, noteFeedback, bagFeedback;
-        FocusDial focusDial;
-        int shownFocusMode, previewMinutes, reminderChoice;
-        string notesFilter = "全部";
-        string draftNote = "", draftAddress = "";
-        readonly Dictionary<NoteItem, TextBlock> reminderLabels = new Dictionary<NoteItem, TextBlock>();
+        TextBlock bagFeedback;
+        string draftAddress = "";
 
         static T ToolMargin<T>(T element, double top, double right, double bottom) where T : FrameworkElement
         {
@@ -82,12 +40,6 @@ namespace DeskMate
             TextBlock view = Ui.Text(label, 13, ToolMuted);
             view.TextWrapping = TextWrapping.Wrap;
             return view;
-        }
-
-        static UIElement ToolGapCard(UIElement content)
-        {
-            Border wrap = Ui.Card(content); wrap.Padding = new Thickness(0,1,0,11); wrap.Margin = new Thickness(0,0,0,9);
-            return wrap;
         }
 
         static Button ToolAction(string label, Action click, bool primary = false)
@@ -115,78 +67,6 @@ namespace DeskMate
             label.Visibility = String.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        static string ClockTime(int seconds)
-        {
-            return String.Format(CultureInfo.InvariantCulture, "{0:00}:{1:00}", seconds / 60, seconds % 60);
-        }
-
-        int FocusMode { get { return app.FocusPaused ? 2 : app.FocusActive ? 1 : 0; } }
-
-        bool focusDetails;
-        public UIElement FocusPage()
-        {
-            shownFocusMode=FocusMode;
-            if(app.FocusActive || previewMinutes<1)previewMinutes=app.Data.PlannedMinutes;
-            var panel=new StackPanel();
-            focusState=Ui.Text("",13,Ui.Accent);focusState.FontWeight=FontWeights.SemiBold;
-            focusClock=Ui.Text("",42,Ui.Ink);focusClock.FontWeight=FontWeights.Light;
-            focusClock.FontFamily=new FontFamily("Segoe UI, Microsoft YaHei UI");
-            Typography.SetNumeralAlignment(focusClock,FontNumeralAlignment.Tabular);
-            focusCaption=Ui.Text("",12,Ui.Muted);
-            focusDial=new FocusDial{Margin=new Thickness(10,0,0,0)};
-            var clockFace=new DockPanel();DockPanel.SetDock(focusDial,Dock.Right);clockFace.Children.Add(focusDial);
-            clockFace.Children.Add(Ui.Stack(focusState,focusClock,focusCaption));
-            panel.Children.Add(new Border{Background=Ui.Color("#F0F5FA"),Padding=new Thickness(15,11,12,11),CornerRadius=new CornerRadius(8),
-                Child=clockFace,Margin=new Thickness(0,0,0,10)});
-            PaintFocusClock();
-            if(!app.FocusActive)
-            {
-                var duration=Ui.Input(previewMinutes.ToString());duration.Width=51;duration.MaxLength=3;duration.ToolTip="1–180 分钟";duration.TextAlignment=TextAlignment.Center;
-                System.Windows.Automation.AutomationProperties.SetName(duration,"专注时长，分钟");
-                var err=ToolFeedback();var units=ToolDetail("分钟");
-                Action start=delegate{
-                    int minutes;
-                    if(!Int32.TryParse(duration.Text.Trim(),out minutes)||minutes<1||minutes>180){Feedback(err,"请输入 1 到 180 分钟。");duration.Focus();return;}
-                    app.StartFocus(minutes);RefreshPage();
-                };
-                duration.TextChanged+=delegate{int n;if(Int32.TryParse(duration.Text,out n)&&n>=1&&n<=180){previewMinutes=n;PaintFocusClock();Feedback(err,"");}};
-                duration.KeyDown+=delegate(object o,KeyEventArgs e){if(e.Key==Key.Enter){e.Handled=true;start();}};
-                var row=new DockPanel();
-                var startButton=Ui.Button("开始专注",start,true);startButton.Margin=new Thickness(0,3,0,4);startButton.MinWidth=104;
-                DockPanel.SetDock(startButton,Dock.Right);row.Children.Add(startButton);
-                row.Children.Add(ToolActions(duration,units));
-                panel.Children.Add(row);panel.Children.Add(err);
-                var shortcuts=new WrapPanel {Margin=new Thickness(0,1,0,5)};
-                foreach(int choice in new[]{15,25,45}){
-                    int n=choice;var preset=ToolAction(n+" 分钟",delegate{duration.Text=n.ToString();});
-                    preset.MinHeight=26;preset.Padding=new Thickness(8,2,8,2);preset.Background=Ui.Color(Ui.Soft);preset.BorderBrush=Ui.Color(Ui.Soft);shortcuts.Children.Add(preset);
-                }
-                panel.Children.Add(shortcuts);
-            }
-            else panel.Children.Add(ToolActions(ToolAction(app.FocusPaused?"继续专注":"暂停",delegate{
-                if(app.FocusPaused)app.ResumeFocus();else app.PauseFocus();RefreshPage();
-            },true),ToolAction("结束本轮",delegate{
-                if(MessageBox.Show(this,"提前结束的这轮不会计入专注记录。结束本轮吗？","番茄钟",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)==MessageBoxResult.Yes)
-                {app.CancelFocus();RefreshPage();}
-            })));
-            int stage=Math.Min(3,app.Data.FocusCount);
-            var summary=Ui.Stack(ToolDetail("累计完成 "+app.Data.FocusCount+" 轮 · "+app.Data.FocusMinutesTotal+" 分钟"),
-                ToolMargin(ToolDetail(stage<3?"收音机已装好 "+stage+" / 3 个零件。每完成一轮，装好一件。":"窗边收音机已经装好。"),5,0,0));
-            if(stage==3)summary.Children.Add(ToolAction("去小屋听歌",delegate{Go("room");}));
-            panel.Children.Add(CompactDetails("专注记录",summary,focusDetails,v=>focusDetails=v));
-            return panel;
-        }
-        void PaintFocusClock()
-        {
-            if (focusClock == null) return;
-            int remaining = app.FocusActive ? app.RemainingSeconds : previewMinutes * 60;
-            focusClock.Text = ClockTime(remaining);
-            focusState.Text = app.FocusPaused ? "计时已暂停" : app.FocusActive ? "专注中" : "准备专注";
-            focusCaption.Text = app.FocusActive ? "本轮共 " + app.Data.PlannedMinutes + " 分钟" : "";
-            focusCaption.Visibility=app.FocusActive?Visibility.Visible:Visibility.Collapsed;
-            focusDial.Update(app.FocusActive?remaining/(double)Math.Max(60,app.Data.PlannedMinutes*60):1,app.FocusPaused);
-        }
-
         public void UpdateToolClock()
         {
             if (focusClock != null && focusClock.IsLoaded)
@@ -194,114 +74,6 @@ namespace DeskMate
                 if (shownFocusMode != FocusMode) { RefreshPage(); return; }
                 PaintFocusClock();
             }
-            foreach (KeyValuePair<NoteItem, TextBlock> entry in reminderLabels)
-                if (entry.Value.IsLoaded) entry.Value.Text = NoteTime(entry.Key);
-        }
-
-        static string NoteTime(NoteItem item)
-        {
-            if (item.Done) return "已完成";
-            if (item.DueUtc == 0) return "无提醒";
-            DateTime local = new DateTime(item.DueUtc, DateTimeKind.Utc).ToLocalTime();
-            return (item.Notified ? "已提醒 · " : "提醒 · ") + local.ToString("M 月 d 日  HH:mm");
-        }
-
-        public UIElement NotesPage()
-        {
-            reminderLabels.Clear();
-            StackPanel page = new StackPanel();
-            StackPanel composer = new StackPanel();
-            composer.Children.Add(ToolHeading("新便签"));
-            TextBox body = Ui.Input(draftNote);
-            body.Margin=new Thickness(0,0,0,3);body.MinHeight=42;
-            System.Windows.Automation.AutomationProperties.SetName(body,"便签内容");
-            body.MaxLength = 240; body.ToolTip = "最多 240 个字，按 Enter 保存";
-            body.TextChanged += delegate { draftNote = body.Text; };
-            composer.Children.Add(body);
-            ComboBox when = new ComboBox { MinWidth = 146, Height = 33,
-                VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 8, 4) };
-            string[] options = { "不设提醒", "1 分钟后", "5 分钟后", "10 分钟后", "30 分钟后", "1 小时后", "明早 9 点" };
-            foreach (string option in options) when.Items.Add(option);
-            when.SelectedIndex = reminderChoice;
-            when.SelectionChanged += delegate { reminderChoice = when.SelectedIndex; };
-            noteFeedback = ToolFeedback();
-            Action add = delegate {
-                string value = body.Text.Trim();
-                if (String.IsNullOrEmpty(value)) { Feedback(noteFeedback, "先写下想记的事。"); body.Focus(); return; }
-                int[] minutes = { 0, 1, 5, 10, 30, 60 };
-                int choice = when.SelectedIndex;
-                long due = choice == 6 ? DateTime.Today.AddDays(1).AddHours(9).ToUniversalTime().Ticks :
-                    choice > 0 ? DateTime.UtcNow.AddMinutes(minutes[choice]).Ticks : 0;
-                string issue = AddNote(value,due);
-                if (issue != null) { Feedback(noteFeedback, issue); return; }
-                draftNote = ""; reminderChoice = 0;
-                if (notesFilter == "已完成") notesFilter = "待办";
-                app.Save(); RefreshPage();
-            };
-            body.KeyDown += delegate(object sender, KeyEventArgs e) {
-                if (e.Key == Key.Enter) { e.Handled = true; add(); }
-            };
-            var noteActions=new DockPanel();var save=Ui.Button("收好便签",add,true);
-            save.Margin=new Thickness(0,4,0,4);save.MinWidth=94;DockPanel.SetDock(save,Dock.Right);
-            noteActions.Children.Add(save);when.HorizontalAlignment=HorizontalAlignment.Left;
-            System.Windows.Automation.AutomationProperties.SetName(when,"提醒时间");
-            noteActions.Children.Add(when);composer.Children.Add(noteActions);
-            composer.Children.Add(noteFeedback);
-            page.Children.Add(ToolGapCard(composer));
-            StackPanel list = new StackPanel();
-            int left = app.Data.Notes.Count(n => !n.Done);
-            var listHeader=new DockPanel();var pending=ToolDetail(left+" 项待办");
-            DockPanel.SetDock(pending,Dock.Right);listHeader.Children.Add(pending);listHeader.Children.Add(Ui.Heading("我的便签",15));
-            list.Children.Add(listHeader);
-            WrapPanel filters = new WrapPanel { Margin = new Thickness(0, 0, 0, 7) };
-            foreach (string choice in new string[] { "全部", "待办", "已完成" })
-            {
-                string filter = choice;
-                var tab=ToolAction(filter,delegate{notesFilter=filter;RefreshPage();});
-                bool selected=notesFilter==filter;tab.Foreground=Ui.Color(selected?Ui.Accent:Ui.Muted);
-                tab.Background=Ui.Color(selected?Ui.Selection:Ui.Paper);tab.BorderBrush=tab.Background;
-                tab.MinHeight=27;tab.Padding=new Thickness(10,2,10,2);
-                System.Windows.Automation.AutomationProperties.SetHelpText(tab,selected?"当前筛选":"筛选便签");
-                filters.Children.Add(tab);
-            }
-            list.Children.Add(filters);
-            List<NoteItem> items = app.Data.Notes.Where(n => notesFilter == "全部" ||
-                (notesFilter == "已完成" ? n.Done : !n.Done)).OrderBy(n => n.Done).ToList();
-            if (items.Count == 0)
-                list.Children.Add(ToolDetail(notesFilter == "已完成" ? "勾选完成的便签，会收在这里。" :
-                    notesFilter == "待办" ? "待办都处理好了。" : "写下第一件想记的事，交给桌宠保管。"));
-            foreach (NoteItem note in items) list.Children.Add(NoteRow(note));
-            page.Children.Add(list);
-            return page;
-        }
-
-        UIElement NoteRow(NoteItem item)
-        {
-            Grid grid = ThreeToolColumns();
-            CheckBox done = new CheckBox { IsChecked = item.Done, VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 13, 0), ToolTip = item.Done ? "移回待办" : "标为完成",
-                Cursor = Cursors.Hand };
-            done.Click += delegate {
-                item.Done = done.IsChecked == true;
-                app.Save(); RefreshPage();
-            };
-            grid.Children.Add(done);
-            StackPanel lines = new StackPanel();
-            TextBlock title = Ui.Text(item.Text, 14, item.Done ? ToolMuted : ToolInk);
-            title.TextWrapping = TextWrapping.Wrap;
-            if (item.Done) title.TextDecorations = TextDecorations.Strikethrough;
-            lines.Children.Add(title);
-            TextBlock due = ToolMargin(Ui.Text(NoteTime(item), 12, ToolMuted), 2, 0, 0);
-            reminderLabels[item] = due; lines.Children.Add(due);
-            Grid.SetColumn(lines, 1); grid.Children.Add(lines);
-            Button remove = ToolAction("移除", delegate {
-                if (MessageBox.Show(this, "移除这张便签？", "便签册", MessageBoxButton.YesNo, MessageBoxImage.Question,
-                    MessageBoxResult.No) != MessageBoxResult.Yes) return;
-                app.Data.Notes.Remove(item); app.Save(); RefreshPage();
-            });
-            remove.VerticalAlignment=VerticalAlignment.Center;remove.Padding=new Thickness(7,3,7,3);remove.MinHeight=27;
-            Grid.SetColumn(remove, 2); grid.Children.Add(remove);
-            return ToolSeparator(grid);
         }
 
         static Grid ThreeToolColumns()
@@ -422,7 +194,7 @@ namespace DeskMate
         {
             if (String.IsNullOrWhiteSpace(text)) return "先写下想记的事。";
             if (text.Length>240) return "便签最多 240 个字，请缩短后再交给我。";
-            if (app.Data.Notes.Count>=1500) return "便签已满，请先移除用完的便签。";
+            if (app.Data.Notes.Count>=StickyCapacity) return "便签已满，请先移除用完的便签。";
             app.Data.Notes.Insert(0,new NoteItem { Text=Store.CleanText(text), DueUtc=dueUtc });
             return null;
         }
@@ -494,7 +266,8 @@ namespace DeskMate
             if (changed)
             {
                 app.Save();
-                if (IsVisible && page==destination) RefreshPage();
+                if (destination=="notes" && app.NotesDesk!=null) app.NotesDesk.RefreshStickyCollection();
+                else if (IsVisible && page==destination) RefreshPage();
             }
             app.React("wave",message);
         }

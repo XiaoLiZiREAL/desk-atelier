@@ -45,7 +45,8 @@ namespace DeskMate
         internal void UpdateFlyoutDismissal()
         {
             bool show = !disposed && ((quickMenu != null && quickMenu.IsOpen) ||
-                (app.Desk != null && app.Desk.IsVisible));
+                (app.Desk != null && app.Desk.IsVisible) ||
+                (app.NotesDesk != null && app.NotesDesk.IsVisible && !app.NotesDesk.KeepsStickyOpen));
             if (handle == IntPtr.Zero || show == watchingFlyoutClicks) return;
             var device = new RawDevice { UsagePage=1, Usage=2, Flags=show?InputSink:RemoveDevice,
                 Target=show?handle:IntPtr.Zero };
@@ -73,6 +74,8 @@ namespace DeskMate
             if (quickMenu != null && quickMenu.IsOpen) quickMenu.IsOpen = false;
             if (app.Desk != null && app.Desk.IsVisible && IsWindowEnabled(new WindowInteropHelper(app.Desk).Handle))
                 app.Desk.Close();
+            if (app.NotesDesk != null && app.NotesDesk.IsVisible && !app.NotesDesk.KeepsStickyOpen)
+                app.NotesDesk.Close();
             return IntPtr.Zero;
         }
     }

@@ -18,16 +18,17 @@ namespace DeskMate
         readonly TextBlock title=Ui.Heading("",18);
         readonly TextBlock toastText=Ui.Text("",13,Ui.Paper);
         readonly Border toast=new Border();
+        readonly Grid toolShell=new Grid();
         readonly DispatcherTimer toastTimer=new DispatcherTimer();
         readonly ScrollViewer scroll=new ScrollViewer { VerticalScrollBarVisibility=ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled,CanContentScroll=false };
         static readonly Dictionary<string,string> names=new Dictionary<string,string> {
-            {"focus","番茄钟"},{"notes","便签"},{"music","听音乐"},{"bag","随身背包"},
-            {"room","小屋"},{"gift","礼物"},{"journal","生活手记"},{"settings","伙伴设置"}
+            {"focus","番茄钟"},{"notes","便签"},{"bag","随身背包"},
+            {"room","小屋"},{"gift","礼物"},{"settings","伙伴设置"}
         };
         readonly List<string> history=new List<string>();
         string page="";
-        int displayedFocusCount,displayedJournalCount;
+        int displayedFocusCount;
         bool positioning;
         public string CurrentTool { get { return page; } }
         public static bool SupportsTool(string key) { return key!=null && names.ContainsKey(key); }
@@ -66,7 +67,7 @@ namespace DeskMate
             shadow.Freeze();
             var backing = new Border {Background=Ui.Color(Ui.Paper),CornerRadius=surface.CornerRadius,
                 Margin=surface.Margin,Effect=shadow,IsHitTestVisible=false};
-            Content=new Grid {Children={backing,surface}};
+            toolShell.Children.Add(backing);toolShell.Children.Add(surface);Content=toolShell;
             toastTimer.Interval=TimeSpan.FromSeconds(3.5);
             toastTimer.Tick+=delegate{toastTimer.Stop();toast.Visibility=Visibility.Collapsed;};
             Closing+=delegate(object s,System.ComponentModel.CancelEventArgs e) {
@@ -77,7 +78,7 @@ namespace DeskMate
                 else if(e.Key==Key.Left && Keyboard.Modifiers==ModifierKeys.Alt){GoBack();e.Handled=true;}
             };
             SourceInitialized+=delegate{AnchorCard();};
-            IsVisibleChanged+=delegate { app.Pet.UpdateFlyoutDismissal(); };
+            IsVisibleChanged+=delegate { if(!IsVisible)FlushStickySave();app.Pet.UpdateFlyoutDismissal(); };
             IsVisibleChanged+=delegate{if(IsVisible){AnchorCard();Dispatcher.BeginInvoke((Action)AnchorCard,DispatcherPriority.Loaded);}};
             SizeChanged+=delegate{if(IsVisible)AnchorCard();};
             app.Pet.LocationChanged+=delegate{if(IsVisible)AnchorCard();};
@@ -100,10 +101,10 @@ namespace DeskMate
             else if(!IsVisible)history.Clear();
             bool changed=page!=key;
             if(changed||!IsVisible)ClearStatus();
-            if(key=="journal" && (changed||!IsVisible))ResetJournalReader();
+            if(changed)FlushStickySave();
             page=key; DrawPage();
             if(changed || !IsVisible)scroll.ScrollToTop();
-            Topmost=app.Data.AlwaysOnTop;AnchorCard();
+            AnchorCard();
         }
         void GoBack()
         {
@@ -113,21 +114,22 @@ namespace DeskMate
         public void RefreshPage(){if(names.ContainsKey(page))DrawPage();}
         void DrawPage()
         {
-            displayedFocusCount=app.Data.FocusCount;displayedJournalCount=app.Data.Journal.Count;
+            displayedFocusCount=app.Data.FocusCount;
             title.Text=names[page];Title="窗边手记 · "+title.Text;
+            Topmost=page=="notes"?KeepsStickyOpen:app.Data.AlwaysOnTop;
+            if(page=="notes"){Content=StickyPage();return;}
+            Content=toolShell;
             UIElement contents;
             switch(page){
-                case "focus": contents=FocusPage();break;case "notes":contents=NotesPage();break;case "bag":contents=BagPage();break;
+                case "focus": contents=FocusPage();break;case "bag":contents=BagPage();break;
                 case "room":contents=RoomPage();break;case "gift":contents=GiftPage();break;
-                case "music":contents=MusicPage();break;case "journal":contents=JournalPage();break;default:contents=SettingsPage();break;
+                default:contents=SettingsPage();break;
             }
             scroll.Content=new Border{Padding=new Thickness(15,12,15,10),Child=contents};
         }
         public void Tick()
         {
             if(page=="room" && displayedFocusCount!=app.Data.FocusCount)RefreshPage();
-            if(page=="journal" && IsVisible && (displayedJournalCount!=app.Data.Journal.Count ||
-                !Object.ReferenceEquals(journalHead,app.Data.Journal.FirstOrDefault())))UpdateJournal(false);
             UpdateToolClock();
         }
         public void ShowStatus(string text)
@@ -152,7 +154,7 @@ namespace DeskMate
                 BorderBrush=Ui.Color(Ui.Line),Child=content,Margin=new Thickness(0,0,0,3)};
         }
 
-        bool collectionOpen,appearanceOpen;
+        bool collectionOpen,appearanceOpen,privacyOpen;
         string nicknameDraft;
         UIElement SettingsPage()
         {
@@ -202,6 +204,11 @@ namespace DeskMate
             });
             settings.Children.Add(CompactDetails("大小与称呼",Ui.Stack(Ui.Row(Ui.Text("桌宠大小  ",12,Ui.Muted),scale,percent),
                 Ui.Text("伙伴怎么称呼你",12,Ui.Muted),Ui.Row(nickname,saveName)),appearanceOpen,v=>appearanceOpen=v));
+            settings.Children.Add(CompactDetails("歌词隐私",Ui.Stack(
+                SettingCheck("联网匹配同步歌词",app.Data.OnlineLyrics,v=>app.Music.SetLyricPrivacy(v,app.Data.ReadLyricWindow)),
+                ToolDetail("向 LRCLIB 发送曲名、歌手和时长以匹配歌词。"),
+                SettingCheck("识别播放器的歌词画面",app.Data.ReadLyricWindow,v=>app.Music.SetLyricPrivacy(app.Data.OnlineLyrics,v)),
+                ToolDetail("仅在本机识别播放器的桌面歌词浮窗。")),privacyOpen,v=>privacyOpen=v));
             return settings;
         }
         CheckBox SettingCheck(string name,bool value,Action<bool> change)
@@ -237,12 +244,43 @@ namespace DeskMate
                 Rect pet=new Rect(p.Left,p.Top,p.Right-p.Left,p.Bottom-p.Top),work=new Rect(m.Work.Left,m.Work.Top,m.Work.Right-m.Work.Left,m.Work.Bottom-m.Work.Top);
                 double scale=app.Pet.ActualWidth>0?pet.Width/app.Pet.ActualWidth:1;if(scale<.5||scale>5)scale=1;
                 MaxHeight=Math.Min(428,Math.Max(1,work.Height/scale-16));
-                Width=Math.Min(page=="room"?430:page=="music"?380:364,Math.Max(1,work.Width/scale-16));
+                Width=Math.Min(page=="notes"?306:page=="room"?430:364,Math.Max(1,work.Width/scale-16));
                 IntPtr hwnd=new WindowInteropHelper(this).Handle;if(hwnd==IntPtr.Zero)return;
                 double height=ActualHeight>0?ActualHeight:MaxHeight;
                 Rect rect=CardBounds(pet,work,new Size(Width,height),scale);
+                var sticky=app.NotesDesk;
+                Bounds paper;
+                if(this==app.Desk && sticky!=null && sticky.IsVisible && sticky.KeepsStickyOpen &&
+                    GetWindowRect(new WindowInteropHelper(sticky).Handle,out paper))
+                    rect=BesidePinnedPaper(rect,new Rect(paper.Left,paper.Top,paper.Right-paper.Left,paper.Bottom-paper.Top),pet,work,scale);
                 SetWindowPos(hwnd,IntPtr.Zero,(int)Math.Round(rect.X),(int)Math.Round(rect.Y),0,0,0x0015);
             }finally{positioning=false;}
+            if(this==app.NotesDesk && app.Desk.IsVisible)app.Desk.AnchorCard();
+        }
+
+        static Rect BesidePinnedPaper(Rect preferred,Rect paper,Rect pet,Rect work,double scale)
+        {
+            if(!preferred.IntersectsWith(paper))return preferred;
+            double gap=Math.Round(8*scale);
+            var candidates=new[]{
+                new Point(pet.Left-preferred.Width-gap,preferred.Y),
+                new Point(pet.Right+gap,preferred.Y),
+                new Point(paper.Left-preferred.Width-gap,preferred.Y),
+                new Point(paper.Right+gap,preferred.Y),
+                new Point(preferred.X,paper.Top-preferred.Height-gap),
+                new Point(preferred.X,paper.Bottom+gap)
+            };
+            return candidates.Select(p=>new Rect(
+                Math.Max(work.Left+gap,Math.Min(p.X,work.Right-gap-preferred.Width)),
+                Math.Max(work.Top+gap,Math.Min(p.Y,work.Bottom-gap-preferred.Height)),preferred.Width,preferred.Height))
+                .OrderBy(r=>OverlapArea(r,paper)).ThenBy(r=>OverlapArea(r,pet))
+                .ThenBy(r=>(r.Location-preferred.Location).LengthSquared).First();
+        }
+
+        static double OverlapArea(Rect first,Rect second)
+        {
+            Rect overlap=Rect.Intersect(first,second);
+            return overlap.IsEmpty?0:overlap.Width*overlap.Height;
         }
     }
     public partial class SaveData { public bool CloseTipSeen; }

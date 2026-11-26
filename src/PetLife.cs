@@ -163,6 +163,7 @@ namespace DeskMate
             return app.Data.Quiet || !IsVisible || manuallyHidden || fullscreenHidden || visitor!=null || dragging || pressing ||
                 (quickMenu!=null && quickMenu.IsOpen) || menu.Visible ||
                 (app.Desk!=null && app.Desk.IsVisible) ||
+                (app.NotesDesk!=null && app.NotesDesk.IsVisible && !app.NotesDesk.KeepsStickyOpen) ||
                 (app.Music!=null && app.Music.Playing);
         }
         void Ambient()
@@ -185,10 +186,7 @@ namespace DeskMate
                 SetEffect(pose,Counts[pose]*FrameMs[pose]*2);
             }
             RoutineIndex=(ix+1)%plan.Length;
-            string detail=action=="tea"?(character=="steve"?"打开水瓶，喝了几口水。":"自己端起茶杯，喝了几口茶。"):action=="game"?"在桌边悄悄藏好了"+Treasure+"。":
-                action=="rest"?"搬来小凳，坐了一会儿。":action=="visit"?"请了一位伙伴来串门。":action=="mine"?"挥镐采下一块圆石。":
-                character=="steve"?"摊开地图，查了查方位。":"翻开本子，写了点东西。";
-            if(activePoses!=null || action=="visit")app.RememberActivity(app.CharacterName+detail);else app.Save();
+            app.Save();
             ambientAt=NextAmbient();
         }
         string Treasure { get { return character=="steve"?"一颗绿宝石":"一枚纽扣"; } }
@@ -232,7 +230,7 @@ namespace DeskMate
             bool win=chosen==hiddenBox;
             app.Data.GameRounds++;
             if(win)app.Data.GamesWon++;
-            app.Remember((win?"猜中了":"猜错了")+app.CharacterName+"藏"+(character=="steve"?"绿宝石":"纽扣")+"的盒子。");
+            app.Save();
             Say(win?"被你发现啦！":"揭晓了，在"+new[]{"左边","中间","右边"}[hiddenBox]+"。");
             RenderBoxes(false,true);
         }

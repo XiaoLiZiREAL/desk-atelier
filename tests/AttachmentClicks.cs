@@ -33,17 +33,6 @@ internal static partial class DismissalChecks
     }
     static void CheckAttachments(IntPtr outside,string folder)
     {
-        app.Remember("test paper one");app.Remember("test paper two");
-        app.Open("notes");Pump(100);
-        var paper=Find<FrameworkElement>(app.Pet,e=>AutomationProperties.GetAutomationId(e)=="PetJournal");
-        ClickExposed(paper);
-        Check(app.Desk.IsVisible&&app.Desk.CurrentTool=="journal","single click on exposed journal replaces the notes card with the journal");
-        var content=Find<TextBlock>(app.Desk,e=>AutomationProperties.GetAutomationId(e)=="journal-entry");
-        string first=content.Text;
-        ClickElement(Find<Button>(app.Desk,b=>Object.Equals(b.Content,"下一页")));
-        Check(app.Desk.IsVisible&&app.Desk.CurrentTool=="journal"&&first!=content.Text,"turning a real journal page keeps its card visible");
-        Click(outside,new Point(110,110),false);
-
         string file=Path.Combine(folder,DragFile);
         File.WriteAllText(file,"test drag and drop");
         var pet=new WindowInteropHelper(app.Pet).Handle;
@@ -78,7 +67,7 @@ internal static partial class DismissalChecks
     {
         var hwnd=new WindowInteropHelper(app.Pet).Handle;
         // Test the application's input hit tree as well as the actual native window.
-        // Character art may cover part of a shoulder strap or paper corner.
+        // Character art may cover part of the backpack strap.
         foreach(double y in new[]{.5,.25,.75,.1,.9})
         foreach(double x in new[]{.5,.25,.75,.1,.9})
         {

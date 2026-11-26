@@ -107,7 +107,8 @@ internal static partial class Integration
         }
     }
     static List<T> Elements<T>() where T : FrameworkElement
-    { return Walk(app.Desk).OfType<T>().Where(x => x.IsLoaded && x.IsVisible).ToList(); }
+    { return Walk(app.NotesDesk!=null && app.NotesDesk.IsVisible && !app.Desk.IsVisible?app.NotesDesk:app.Desk)
+        .OfType<T>().Where(x => x.IsLoaded && x.IsVisible).ToList(); }
 
     static bool Match(Button b, string label)
     {
@@ -177,22 +178,23 @@ internal static partial class Integration
     }
     static void Nav(string page,params string[] names)
     {
-        if(page=="bag" || page=="journal")
-            Click(PetAccessory(page=="bag"?"打开随身背包":"翻开生活手记"));
+        if(page=="bag")
+            Click(PetAccessory("打开随身背包"));
         else if(page=="room")
         {
-            Nav("focus");Expand("专注记录");Click("去小屋听歌");
+            Nav("gift");Click("布置礼物房间");
         }
         else
         {
-            var mapping=new Dictionary<string,string>{{"focus","番茄钟"},{"notes","便签"},{"music","听音乐"},{"gift","礼物"},{"settings","伙伴设置"}};
+            var mapping=new Dictionary<string,string>{{"focus","番茄钟"},{"notes","便签"},{"gift","礼物"},{"settings","伙伴设置"}};
             var menu=Quick();
             var choice=menu.Items.OfType<MenuItem>().Single(i=>Equals(i.Header,mapping[page]));
             menu.IsOpen=false;choice.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent,choice));Pump(90);
         }
-        if(!app.Desk.IsVisible||app.Desk.CurrentTool!=page)throw new Exception("Tool did not open: "+page);
-        if(app.Desk.ActualWidth>444.5||app.Desk.ActualHeight>428.5)throw new Exception("Oversized "+page+" card");
-        Say("Pet tool  "+page+"  "+app.Desk.ActualWidth+"x"+app.Desk.ActualHeight+" DIPs");
+        var card=page=="notes"?app.NotesDesk:app.Desk;
+        if(card==null||!card.IsVisible||card.CurrentTool!=page)throw new Exception("Tool did not open: "+page);
+        if(card.ActualWidth>444.5||card.ActualHeight>428.5)throw new Exception("Oversized "+page+" card");
+        Say("Pet tool  "+page+"  "+card.ActualWidth+"x"+card.ActualHeight+" DIPs");
     }
     static void Expand(string name,bool visible=true)
     {
@@ -204,7 +206,7 @@ internal static partial class Integration
         var element = w.Content as FrameworkElement;
         if (element == null) throw new Exception("Window has no renderable content");
         element.UpdateLayout();
-        int width = Math.Max(1, (int)Math.Ceiling(element.ActualWidth)), height = Math.Max(1, (int)Math.Ceiling(element.ActualHeight));
+        int width = Math.Max(1, (int)Math.Ceiling(w.ActualWidth)), height = Math.Max(1, (int)Math.Ceiling(w.ActualHeight));
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         if (!w.AllowsTransparency)
         {
@@ -244,12 +246,12 @@ internal static partial class Integration
         Check(rightClick.Handled&&rightMenu!=null&&rightMenu.IsOpen&&rightMenu.Placement==PlacementMode.MousePoint,"Right-clicking the desktop sprite opens its own context menu");
         Check(rightMenu.Items.OfType<MenuItem>().Select(i=>(string)i.Header).SequenceEqual(new[]{"番茄钟","听音乐","便签","礼物","伙伴设置","收起桌宠","退出"})&&
             !StudioWindow.SupportsTool("play")&&!StudioWindow.SupportsTool("games"),"Flat desktop menu contains only its seven direct actions");
-        Check(PetAccessory("打开随身背包")==null && PetAccessory("翻开生活手记")!=null,"Fresh pet shows a paper tab and no empty backpack");
+        Check(PetAccessory("打开随身背包")==null && PetAccessory("翻开生活手记")==null &&
+            !StudioWindow.SupportsTool("journal") && !StudioWindow.SupportsTool("music"),"Fresh pet has no empty backpack, diary tag or obsolete tool routes");
         rightMenu.IsOpen=false;
-        Nav("journal");
-        Check(PaperPart<TextBlock>("journal-position").Text=="0 / 0" && !Find("上一页").IsEnabled && !Find("下一页").IsEnabled,
-            "Empty paper journal has no active page turns");
-        app.Desk.Close();
+        Nav("notes");
+        Check(PaperPart<TextBox>("StickyEditor").Text=="" && app.Data.Notes.Count==0,"A blank sheet opens without adding anything to the save");
+        app.NotesDesk.Close();
         var menu=Quick();
         Check(!app.Desk.IsVisible&&menu.Items.OfType<MenuItem>().Count()<=8,"External activation presents a short context menu without opening a card");
         var menuBitmap=new RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth),(int)Math.Ceiling(menu.ActualHeight),96,96,PixelFormats.Pbgra32);
@@ -257,12 +259,14 @@ internal static partial class Integration
         using(var f=File.Create(Path.Combine(screenDir,"02-quick-menu.png")))encoder.Save(f);
         menu.IsOpen=false;
         Nav("focus");Capture(app.Desk,"03-tomato-ready");
-        var duration=Elements<TextBox>().Single();
-        string initial=duration.Text;duration.Text="180";duration.UpdateLayout();
-        var viewport=(ScrollViewer)duration.Template.FindName("PART_ContentHost",duration);
-        double digits=duration.GetRectFromCharacterIndex(2,true).Right-duration.GetRectFromCharacterIndex(0).Left;
-        Check(digits>0 && viewport.ViewportWidth>=digits,"Duration field fits all three digits for a 180-minute session");
-        duration.Text=initial;
+        var duration=Elements<RangeBase>().Single(d=>AutomationProperties.GetAutomationId(d)=="FocusDurationDial");
+        double initial=duration.Value; duration.Value=180; app.Desk.UpdateLayout();
+        var clock=Elements<TextBlock>().Single(t=>t.Text=="180:00");
+        var digitBounds=clock.TransformToVisual(duration).TransformBounds(new Rect(clock.RenderSize));
+        Check(duration.Minimum==1 && duration.Maximum==180 && digitBounds.Left>16 &&
+            digitBounds.Right<duration.ActualWidth-16 && digitBounds.Width>0,
+            "The 180-minute readout fits inside the rotary dial");
+        duration.Value=initial;
         var wd=Forms.Screen.FromHandle(new WindowInteropHelper(app.Pet).Handle).WorkingArea;
         var workArea=new Rect(wd.Left,wd.Top,wd.Width,wd.Height);
         var cardRect=NativeBounds(app.Desk);var petRect=NativeBounds(app.Pet);
@@ -302,24 +306,20 @@ internal static partial class Integration
     {
         Nav("notes", "便签", "便签提醒", "便签册");
         var note = Elements<TextBox>().Single();
-        note.Text = "去阳台给薄荷浇水".PadRight(34, '。') + "🌿也记得开窗";
-        Elements<ComboBox>().Single().SelectedIndex = 1;
-        Click("收好便签");
-        Check(app.Data.Notes.Count == 1 && app.Data.Notes[0].DueUtc > DateTime.UtcNow.Ticks, "Note with future reminder saved through UI");
-        Capture(app.Desk,"03-notes");
-        app.Desk.Close();
+        note.Text = "周六的小计划\r\n\r\n给窗台的薄荷浇水。\r\n去书店取预订的书。";
+        Pump(600);
+        Check(Store.Load().Notes.Single().Text.Contains("薄荷"), "Typing on the sheet autosaves without a confirmation button");
+        Capture(app.NotesDesk,"03-notes");
+        app.NotesDesk.Close();
         string sample=Path.Combine(stateDir,"书单.txt");
         File.WriteAllText(sample,"月亮与六便士");
         app.Desk.AcceptPetDrop(new DataObject(DataFormats.FileDrop,new[]{sample}));
         Pump(100);
         Check(!app.Desk.IsVisible && PetAccessory("打开随身背包")!=null,"File drop reveals backpack without opening the card");
-        var paper=PetAccessory("翻开生活手记");
         var bag=PetAccessory("打开随身背包");
         var sprite=app.Pet.LiveSprite;
-        var paperCenter=paper.TranslatePoint(new Point(paper.ActualWidth/2,paper.ActualHeight/2),sprite);
         var bagCenter=bag.TranslatePoint(new Point(bag.ActualWidth/2,bag.ActualHeight/2),sprite);
-        Check(paperCenter.X>sprite.ActualWidth*.5 && paperCenter.Y>sprite.ActualHeight*.73 &&
-            bagCenter.X<sprite.ActualWidth*.5 && bagCenter.Y>sprite.ActualHeight*.73,"Paper tab is at the pet's lower right and backpack is at its lower left");
+        Check(bagCenter.X<sprite.ActualWidth*.5 && bagCenter.Y>sprite.ActualHeight*.73,"Backpack stays near the left foot");
         Capture(app.Pet,"03-pet-accessories");
         Nav("bag");
         Check(HasText("书单.txt"),"Backpack opens directly to the dropped file");
@@ -336,7 +336,7 @@ internal static partial class Integration
         Check(!app.Desk.IsVisible && PetAccessory("打开随身背包")==null && File.Exists(sample),"Removing the last item closes the card, hides the backpack and retains the real file");
         app.Desk.AcceptPetDrop(new DataObject(DataFormats.UnicodeText,"https://example.org/"));
         Nav("focus","专注工坊","专注","专注计时");
-        Elements<TextBox>().Single().Text = "2";
+        Elements<RangeBase>().Single(d=>AutomationProperties.GetAutomationId(d)=="FocusDurationDial").Value=2;
         Click("开始专注");
         Check(app.FocusActive && app.Data.PlannedMinutes == 2, "Custom focus duration accepted");
         Click("暂停"); Check(app.FocusPaused, "Timer paused");
@@ -347,11 +347,11 @@ internal static partial class Integration
         app.Data.Notes[0].DueUtc = DateTime.UtcNow.AddSeconds(-2).Ticks;
         app.Save(); app.TickTools(); app.TickTools();
         Check(app.Data.FocusCount == 1 && app.Data.FocusMinutesTotal == 2 && app.Data.Notes[0].Notified, "Expiry reconciliation records focus and due note once");
-        Check(app.Data.Journal.Any(j => j.Text.Contains("薄荷")), "Delivery recorded in the actual journal");
+        Check(app.Data.Notes.Count==1 && app.Data.Journal.Count==0, "A reminder does not create diary entries or extra notes");
         for (int round = 0; round < 2; round++)
         {
             Nav("focus","专注工坊");
-            Elements<TextBox>().Single().Text="1";
+            Elements<RangeBase>().Single(d=>AutomationProperties.GetAutomationId(d)=="FocusDurationDial").Value=1;
             Click("开始专注");
             app.Data.FocusEndUtc = DateTime.UtcNow.AddSeconds(-2).Ticks;
             app.TickTools();
@@ -414,22 +414,16 @@ internal static partial class Integration
     static void TestTrayAndPersist()
     {
         var menu = (Forms.ContextMenuStrip)typeof(PetWindow).GetField("menu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(app.Pet);
-        app.Desk.Close(); Pump(70); Check(!app.Desk.IsVisible && !app.Exiting, "Closing journal keeps resident app alive");
+        app.Desk.Close(); Pump(70); Check(!app.Desk.IsVisible && !app.Exiting, "Closing a tool keeps the pet running");
         Menu(menu,"便签").PerformClick(); Pump(130);
-        Check(app.Desk.IsVisible&&app.Desk.CurrentTool=="notes", "Tray opens only the requested note card");
-        Nav("journal","生活手记","回忆","回忆手记","相处手记");
-        Capture(app.Desk, "14-journal");
-        var sheet=PaperPart<Grid>("journal-sheet");
-        var body=PaperPart<TextBlock>("journal-entry");
-        string first=body.Text, previousColor=(string)sheet.Tag;
-        Click("下一页");
-        Check(body.Text==app.Data.Journal[1].Text && previousColor!=(string)sheet.Tag,"Turning a page shows the next saved entry on a differently colored sheet");
-        string held=body.Text;
-        previousColor=(string)sheet.Tag;
-        app.Remember("伙伴在桌边放下了杯子。");app.Desk.Tick();
-        Check(body.Text==held && (string)sheet.Tag==previousColor,"A new journal event preserves the open page and paper color");
-        Click("上一页");
-        Check(body.Text==first && previousColor!=(string)sheet.Tag && new[]{"黄色","蓝色","红色"}.Contains((string)sheet.Tag),"Turning back selects another valid paper color and the expected entry");
+        Check(app.NotesDesk.IsVisible&&!app.Desk.IsVisible, "Tray opens the bare sheet");
+        var sheet=PaperPart<Grid>("StickyPaper");
+        string color=AutomationProperties.GetName(sheet);
+        Click(PaperPart<Button>("StickyFold"));
+        Check(PaperPart<TextBox>("StickyEditor").Text=="" && color!=AutomationProperties.GetName(sheet),"Fold opens a fresh sheet and changes its paper color");
+        PaperPart<TextBox>("StickyEditor").Text="临时的第二页";
+        Click(PaperPart<Button>("StickyTrash"));
+        Check(app.Data.Notes.Count==1 && PaperPart<TextBox>("StickyEditor").Text.Contains("薄荷"),"Trash removes only the selected sheet");
         
         Nav("room","我的小屋"); Pump(125); Capture(app.Desk,"16-compact-room");
         app.Save(); var disk=Store.Load();

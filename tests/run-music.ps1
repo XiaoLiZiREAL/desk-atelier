@@ -13,12 +13,12 @@ $target=[IO.Path]::GetFullPath($Output)
 $retail=Join-Path $target 'DeskAtelier.exe'
 Copy-Item -LiteralPath $Program -Destination $retail -Force
 $refs=@('/nologo','/target:exe','/codepage:65001','/utf8output',"/r:$retail",'/r:System.Core.dll','/r:System.dll','/r:System.Xaml.dll','/r:System.Windows.Forms.dll','/r:System.Drawing.dll')
-foreach($name in 'WindowsBase','PresentationCore','PresentationFramework','UIAutomationTypes','UIAutomationClient'){$refs+="/r:$fx\WPF\$name.dll"}
+foreach($name in 'WindowsBase','PresentationCore','PresentationFramework','UIAutomationTypes','UIAutomationClient','UIAutomationProvider'){$refs+="/r:$fx\WPF\$name.dll"}
 foreach($name in 'System.Runtime','System.Runtime.InteropServices.WindowsRuntime','System.Collections'){$refs+="/r:$fx\$name.dll"}
 foreach($name in 'Windows.Foundation','Windows.Media','Windows.Storage'){$refs+="/r:$metadata\$name.winmd"}
 $harness=Join-Path $target 'MusicIntegration.exe'
 $fixture=Join-Path $target 'QQMusic.exe'
-& "$fx\csc.exe" @refs "/out:$harness" '/main:MusicChecks' (Join-Path $PSScriptRoot 'Integration.cs') (Join-Path $PSScriptRoot 'MusicIntegration.cs')
+& "$fx\csc.exe" @refs "/out:$harness" '/main:MusicChecks' (Join-Path $PSScriptRoot 'Integration.cs') (Join-Path $PSScriptRoot 'MusicIntegration.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
 if($LASTEXITCODE){throw 'Music integration harness compile failed'}
 & "$fx\csc.exe" @refs "/out:$fixture" (Join-Path $PSScriptRoot 'media-probes\WindowFixture.cs')
 if($LASTEXITCODE){throw 'UI accessibility fixture compile failed'}

@@ -32,7 +32,7 @@ namespace DeskMate
         private BitmapSource[][] frames;
         private Drawing.Icon trayIcon;
         private IntPtr handle;
-        private Forms.ToolStripMenuItem visibilityItem, quietItem, topItem;
+        private Forms.ToolStripMenuItem visibilityItem, quietItem, topItem, musicItem;
         private bool manuallyHidden, fullscreenHidden, pressing, dragging, disposed;
         private NativePoint pressPoint, pressWindow;
         private long effectUntil, speechUntil, ambientAt, shellCheckAt, pendingClickAt, nearbySince;
@@ -123,9 +123,10 @@ namespace DeskMate
         });
         void BuildMenu()
         {
-            menu.ShowImageMargin=false;menu.Font=new Drawing.Font("Microsoft YaHei UI",9);
+            menu.ShowImageMargin=false;menu.ShowCheckMargin=true;menu.Font=new Drawing.Font("Microsoft YaHei UI",9);
             AddTray("番茄钟",delegate{app.Open("focus");});
-            AddTray("听音乐",delegate{app.Open("music");});
+            musicItem=AddTray("听音乐",delegate{app.Music.SetEnabled(musicItem.Checked);});
+            musicItem.CheckOnClick=true;
             AddTray("便签",delegate{app.Open("notes");});
             AddTray("礼物",delegate{app.Open("gift");});
             menu.Items.Add(new Forms.ToolStripSeparator());
@@ -172,7 +173,15 @@ namespace DeskMate
                 divider.Style=(Style)theme["MenuDivider"];
             }
             AddOverlay(popup,"番茄钟","\uE916",delegate{app.Open("focus");});
-            AddOverlay(popup,"听音乐","\uE8D6",delegate{app.Open("music");});
+            var music=AddOverlay(popup,"听音乐","\uE8D6",null);
+            music.IsCheckable=true;
+            music.IsChecked=app.Data.SingAlongEnabled;
+            RoutedEventHandler changeMusic=delegate {
+                app.Music.SetEnabled(music.IsChecked);
+                musicItem.Checked=music.IsChecked;
+            };
+            music.Checked+=changeMusic;
+            music.Unchecked+=changeMusic;
             AddOverlay(popup,"便签","\uE70B",delegate{app.Open("notes");});
             AddOverlay(popup,"礼物","\uE7B8",delegate{app.Open("gift");});
             popup.Items.Add(divider);
@@ -181,20 +190,22 @@ namespace DeskMate
             AddOverlay(popup,"退出","\uE8BB",delegate{app.Quit();});
             return popup;
         }
-        static void AddOverlay(ContextMenu owner,string label,string glyph,Action action)
+        static MenuItem AddOverlay(ContextMenu owner,string label,string glyph,Action action)
         {
             var icon=Ui.Icon(glyph,14,"#455465");
             var item=new MenuItem{Header=label,Icon=icon};
             if(SystemParameters.HighContrast)icon.SetResourceReference(TextBlock.ForegroundProperty,SystemColors.MenuTextBrushKey);
             else item.Style=(Style)quickMenuTheme.Value[typeof(MenuItem)];
-            item.Click+=delegate{action();};
+            if(action!=null)item.Click+=delegate{action();};
             owner.Items.Add(item);
+            return item;
         }
         private void UpdateMenu()
         {
             visibilityItem.Text = manuallyHidden || fullscreenHidden ? "显示桌宠" : "收起桌宠";
             quietItem.Checked = app.Data.Quiet;
             topItem.Checked = app.Data.AlwaysOnTop;
+            musicItem.Checked = app.Data.SingAlongEnabled;
         }
 
         private void ToggleQuiet() { app.Data.Quiet = !app.Data.Quiet; app.Save(); Sync(); }

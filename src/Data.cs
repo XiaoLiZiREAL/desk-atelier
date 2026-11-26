@@ -273,6 +273,7 @@ namespace DeskMate
                 Data.FocusMinutesTotal = (int)Math.Min(Int32.MaxValue, (long)Data.FocusMinutesTotal + Data.PlannedMinutes);
             }
             foreach (NoteItem note in due) note.Notified = true;
+            if (due.Count>0 && NotesDesk!=null && NotesDesk.IsVisible) NotesDesk.RefreshStickyCollection();
             Save();
             List<string> messages = new List<string>();
             if (finished) messages.Add(Data.FocusCount == 3 ? "专注完成！收音机组装好了，去房间听听吧。" : "完成了 " + Data.PlannedMinutes + " 分钟专注，起来活动一下吧。");
