@@ -42,6 +42,8 @@ namespace DeskMate
         readonly Stopwatch clock=Stopwatch.StartNew();
         readonly long interval;
         readonly ChinesePlayers windows=new ChinesePlayers();
+        readonly BrowserAudioSource browserAudio=new BrowserAudioSource();
+        readonly NetEaseBrowserPlayer netEaseWeb=new NetEaseBrowserPlayer();
         WinMediaSource smtc;
         MediaReading latest=MediaReading.Empty("等待播放器");
         string choice="auto";
@@ -120,15 +122,22 @@ namespace DeskMate
                         startRetry=clock.ElapsedMilliseconds+3000;ReleaseSystem();
                     }
                 }
+                lock(gate)if(disposed || revision!=version)return;
                 if(reading!=null && (lastSystem==null || reading.AppId!=lastSystem.AppId || !SameTag(reading.Title,lastSystem.Title) ||
                     !SameTag(reading.Artist,lastSystem.Artist)))currentSongSince=reading.SampledUtc;
                 lastSystem=reading;
-                bool inspect=reading==null || reading.PlayerKey!="other" || selected=="auto";
-                if(inspect)
+                // Desktop player windows cannot supply metadata or lyrics for an active browser session.
+                if(reading==null || reading.PlayerKey!="browser" || !reading.StateKnown || !reading.Playing)
                 {
                     var window=windows.Sample(WindowPreference(selected,reading));
                     reading=Choose(selected,reading,window,currentSongSince);
                 }
+                if(selected=="auto" && (reading==null || !reading.StateKnown || !reading.Playing ||
+                    (reading.PlayerKey!="browser" && reading.Title.Length==0 && reading.LiveLyric.Length==0)))
+                    reading=browserAudio.Sample()??reading;
+                else browserAudio.Reset();
+                if(selected=="auto" && reading!=null && reading.PlayerKey=="browser" && reading.StateKnown && reading.Playing)
+                    reading=PreferNetEaseWeb(reading,netEaseWeb.Sample(ChinesePlayers.BrowserProcess(reading.AppId)));
                 if(reading==null)reading=MediaReading.Empty(systemError.Length>0?systemError:
                     selected=="auto"?"等待播放器发布歌曲信息":"暂未检测到所选播放器的歌曲信息");
                 lock(gate)if(!disposed && revision==version)Volatile.Write(ref latest,reading);
@@ -158,6 +167,29 @@ namespace DeskMate
                 string right=String.Join(" ",(b??"").Normalize(NormalizationForm.FormKC).Split((char[])null,StringSplitOptions.RemoveEmptyEntries));
                 return String.Equals(left,right,StringComparison.OrdinalIgnoreCase);
             }catch(ArgumentException){return false;}
+        }
+        internal static MediaReading PreferNetEaseWeb(MediaReading browser,MediaReading web)
+        {
+            if(web==null || !web.StateKnown || !web.Playing || String.IsNullOrWhiteSpace(web.Title))return browser;
+            if(browser==null || browser.Source!="smtc" || !browser.StateKnown || !browser.Playing ||
+                !SameTag(web.Title,browser.Title))return web;
+            string browserProcess=ChinesePlayers.BrowserProcess(browser.AppId);
+            if(browserProcess.Length==0 || browserProcess!=ChinesePlayers.BrowserProcess(web.AppId))return web;
+            bool artistsKnown=web.Artist.Length>0 && browser.Artist.Length>0;
+            if(artistsKnown && !SameTag(web.Artist,browser.Artist))return web;
+            DateTime now=DateTime.UtcNow;
+            bool sameClock=web.HasTimeline && browser.HasTimeline &&
+                Math.Abs((web.Duration-browser.Duration).TotalSeconds)<=2 &&
+                Math.Abs((web.PositionAt(now)-browser.PositionAt(now)).TotalSeconds)<=3;
+            // Two tabs in the same browser may publish the same title. Require another matching field.
+            if(!artistsKnown && !sameClock)return web;
+            bool useSystemClock=browser.HasTimeline && (!web.HasTimeline || sameClock);
+            string artist=web.Artist.Length>0?web.Artist:browser.Artist;
+            if(!useSystemClock && artist==web.Artist)return web;
+            var timing=useSystemClock?browser:web;
+            return new MediaReading(web.Title,artist,web.AppId,web.Source,web.PlayerKey,timing.PositionAt(now),
+                timing.Duration,true,true,timing.HasTimeline,now,timing.Rate,web.Diagnostic,
+                web.LiveLyric,web.LyricSource,web.LyricDiagnostic);
         }
         internal static MediaReading Choose(string selected,MediaReading system,MediaReading window,DateTime songSince=default(DateTime))
         {
@@ -190,7 +222,7 @@ namespace DeskMate
         public void Dispose()
         {
             bool release;
-            lock(gate){if(disposed)return;disposed=true;release=!busy;windows.SetReadWindow(false);Volatile.Write(ref latest,MediaReading.Empty("已停止读取"));}
+            lock(gate){if(disposed)return;disposed=true;release=!busy;netEaseWeb.Dispose();windows.SetReadWindow(false);Volatile.Write(ref latest,MediaReading.Empty("已停止读取"));}
             if(release)Task.Run((Action)ReleaseSystem);
         }
     }
@@ -250,8 +282,8 @@ namespace DeskMate
             var all=manager.GetSessions().Where(s=>preferred=="auto" || ChinesePlayers.Key(s.SourceAppUserModelId)==preferred).ToList();
             if(preferred=="auto")
             {
-                var domestic=all.FirstOrDefault(s=>ChinesePlayers.Key(s.SourceAppUserModelId)!="other" && IsPlaying(s));
-                if(domestic!=null)return domestic;
+                var recognized=all.FirstOrDefault(s=>ChinesePlayers.Key(s.SourceAppUserModelId)!="other" && IsPlaying(s));
+                if(recognized!=null)return recognized;
             }
             if(current!=null && IsPlaying(current))return current;
             return all.FirstOrDefault(IsPlaying)??current??all.FirstOrDefault();

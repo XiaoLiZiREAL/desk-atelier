@@ -25,6 +25,13 @@ namespace DeskMate
         static readonly Dictionary<string,string[]> Processes=new Dictionary<string,string[]> {
             {"netease",new[]{"cloudmusic"}},{"qq",new[]{"QQMusic"}},{"kugou",new[]{"KuGou","KuGouMusic"}}
         };
+        // Windows media sessions use a shortcut AppID, an executable path, or a packaged app ID.
+        static readonly HashSet<string> BrowserIds=new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+            "Chrome", "Chrome.exe", "ChromeBeta", "ChromeDev", "ChromeCanary", "Chrome SxS",
+            "Chrome Beta", "Chrome Dev", "Chrome Canary", "MSEdge", "msedge.exe", "MSEdgeBeta", "MSEdgeDev", "MSEdgeCanary", "MSEdgeSxS",
+            "Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe!App", "Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge",
+            "Firefox", "firefox.exe", "Mozilla.Firefox_n80bbvh6b1yt2!App", "308046B0AF4A39CB", "E7CF176E110C211B"
+        };
         static readonly string[] Brands={"网易云音乐","网易云","NetEase Cloud Music","QQ音乐","QQ 音乐","QQMusic","酷狗音乐","酷狗","KuGou Music"};
         static readonly Regex TimePair=new Regex(@"(?<![\d:])((?:\d{1,2}:)?\d{1,3}:[0-5]\d)\s*[/／]\s*((?:\d{1,2}:)?\d{1,3}:[0-5]\d)(?![\d:])",RegexOptions.CultureInvariant);
         static readonly Regex SingleTime=new Regex(@"^(?:\d{1,2}:)?\d{1,3}:[0-5]\d$",RegexOptions.CultureInvariant);
@@ -39,9 +46,21 @@ namespace DeskMate
         bool scanning;
         MediaReading cached,previous;
         long next;
+        internal static string BrowserProcess(string id)
+        {
+            string value=(id??"").Trim();
+            int slash=Math.Max(value.LastIndexOf('\\'),value.LastIndexOf('/'));
+            string name=value.Substring(slash+1);
+            if(!BrowserIds.Contains(name))return "";
+            if(name.StartsWith("Chrome",StringComparison.OrdinalIgnoreCase))return "chrome";
+            if(name.StartsWith("MSEdge",StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Microsoft.MicrosoftEdge",StringComparison.OrdinalIgnoreCase))return "msedge";
+            return "firefox";
+        }
         internal static string Key(string id)
         {
-            string s=(id??"").ToLowerInvariant();
+            string s=(id??"").Trim().ToLowerInvariant();
+            if(BrowserProcess(s).Length>0)return "browser";
             if(s.Contains("cloudmusic")||s.Contains("网易云音乐"))return "netease";
             if(s.Contains("qqmusic")||s.Contains("qq音乐"))return "qq";
             if(s.Contains("kugou")||s.Contains("酷狗音乐"))return "kugou";

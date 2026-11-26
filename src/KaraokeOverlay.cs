@@ -16,6 +16,7 @@ namespace DeskMate
             internal Window Window;
             internal Border Card;
             internal TextBlock Current, Next, Symbol;
+            internal Grid Progress;
             internal ScaleTransform Fill;
             internal IntPtr Hwnd;
         }
@@ -23,25 +24,38 @@ namespace DeskMate
         private LyricPanel lyrics;
         private string lyricLine="", lyricNext="";
         private double lyricFraction;
-        private bool lyricPlaying, placementDirty, placingLyrics, dancing;
+        private bool lyricPlaying, placementDirty, placingLyrics, dancing, browserTrack, showProgress;
         private int lyricRevision;
         private long singingSince;
 
-        public string KaraokeLyric { get { return lyricLine; } }
+        public string KaraokeLyric { get { return browserTrack ? "" : lyricLine; } }
+        public bool ShowingBrowserTrack { get { return browserTrack && KaraokeVisible; } }
         public bool KaraokeVisible { get { return lyrics!=null && lyrics.Window.IsVisible; } }
         public bool KaraokeMoving { get { return dancing; } }
 
         public void SetKaraoke(string line, string next, double fraction, bool singing)
+        {
+            SetMusicPanel(line,next,fraction,singing,false,true);
+        }
+
+        internal void ShowBrowserTrack(string title,string artist,double fraction,bool hasTimeline)
+        {
+            bool hasTitle=!String.IsNullOrWhiteSpace(title);
+            string detail=String.IsNullOrWhiteSpace(artist)?(hasTitle?"浏览器正在播放":""):"正在播放 · "+artist;
+            SetMusicPanel(hasTitle?title:"浏览器正在播放音频",detail,fraction,true,true,hasTimeline);
+        }
+
+        private void SetMusicPanel(string line,string next,double fraction,bool singing,bool track,bool progress)
         {
             int version=Interlocked.Increment(ref lyricRevision);
             Action update=delegate
             {
                 if(disposed || version!=Volatile.Read(ref lyricRevision))return;
                 string current=(line??"").Trim(), following=(next??"").Trim();
-                bool changed=current!=lyricLine || following!=lyricNext;
+                bool changed=current!=lyricLine || following!=lyricNext || track!=browserTrack || progress!=showProgress;
                 bool playbackChanged=singing!=lyricPlaying;
                 if(singing && (!lyricPlaying || current!=lyricLine))singingSince=clock.ElapsedMilliseconds;
-                lyricLine=current;lyricNext=following;lyricPlaying=singing;
+                lyricLine=current;lyricNext=following;lyricPlaying=singing;browserTrack=track;showProgress=progress;
                 lyricFraction=double.IsNaN(fraction)||double.IsInfinity(fraction)?0:Math.Max(0,Math.Min(1,fraction));
                 if(changed)placementDirty=true;
                 if(lyrics!=null)
@@ -99,6 +113,7 @@ namespace DeskMate
             layout.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1,GridUnitType.Star)});
             Grid.SetColumn(lines,1);layout.Children.Add(p.Symbol);layout.Children.Add(lines);
             var progress=new Grid{Height=2,Margin=new Thickness(0,10,0,0),ClipToBounds=true,Background=Ui.Color("#E4EAF0")};
+            p.Progress=progress;
             p.Fill=new ScaleTransform(0,1);
             progress.Children.Add(new Border{Background=Ui.Color(Ui.Accent),RenderTransform=p.Fill,RenderTransformOrigin=new Point(0,.5)});
             var stack=new StackPanel();stack.Children.Add(layout);stack.Children.Add(progress);
@@ -128,10 +143,13 @@ namespace DeskMate
         private void StyleLyricText()
         {
             lyrics.Current.Text=lyricLine;
-            lyrics.Current.FontSize=lyricLine.Length>120?14:lyricLine.Length>52?16:18;
+            lyrics.Current.FontSize=browserTrack?15:lyricLine.Length>120?14:lyricLine.Length>52?16:18;
+            lyrics.Current.TextWrapping=browserTrack?TextWrapping.NoWrap:TextWrapping.Wrap;
+            lyrics.Current.TextTrimming=browserTrack?TextTrimming.CharacterEllipsis:TextTrimming.None;
             lyrics.Current.LineHeight=lyrics.Current.FontSize+7;
             lyrics.Next.Text=lyricNext;
             lyrics.Next.Visibility=lyricNext.Length==0?Visibility.Collapsed:Visibility.Visible;
+            lyrics.Progress.Visibility=showProgress?Visibility.Visible:Visibility.Collapsed;
             lyrics.Symbol.Text=lyricPlaying?"\uE8D6":"\uE769";
         }
 
@@ -204,7 +222,7 @@ namespace DeskMate
             if(!KaraokeVisible || !lyricPlaying)return false;
             dancing=true;
             var singing=ActionFrames(character,"song");
-            if(singing!=null)ShowPose(singing[ActionScore.SungPose(now-singingSince,lyricFraction)]);
+            if(singing!=null)ShowPose(singing[ActionScore.SungPose(now-singingSince,browserTrack?0:lyricFraction)]);
             else DrawFrame(Idle,(int)((now-singingSince)/320)%Counts[Idle]);
             return true;
         }

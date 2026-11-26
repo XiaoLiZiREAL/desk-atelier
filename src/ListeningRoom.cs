@@ -175,10 +175,21 @@ namespace DeskMate
                 double offset = Math.Max(-10000, Math.Min(10000, app.Data.LyricOffsetMs)) / 1000d;
                 var position = reading.PositionAt(DateTime.UtcNow).TotalSeconds;
                 var frame = lyrics.Document.At(Math.Max(0, position + offset), reading.Duration.TotalSeconds);
-                Paint(frame.Text, frame.Translation.Length > 0 ? frame.Translation : frame.NextText,
-                      frame.Progress, Playing && !frame.IsInstrumental);
+                if (!String.IsNullOrWhiteSpace(frame.Text))
+                {
+                    Paint(frame.Text, frame.Translation.Length > 0 ? frame.Translation : frame.NextText,
+                          frame.Progress, Playing && !frame.IsInstrumental);
+                    return;
+                }
             }
-            else if (live) Paint(reading.LiveLyric, "", 0, !reading.StateKnown || Playing);
+            if (live) Paint(reading.LiveLyric, "", 0, !reading.StateKnown || Playing);
+            else if (Playing && reading.PlayerKey=="browser")
+            {
+                CurrentLine="";
+                double progress=reading.HasTimeline?reading.PositionAt(DateTime.UtcNow).TotalSeconds/reading.Duration.TotalSeconds:0;
+                app.Pet.ShowBrowserTrack(reading.Title,reading.Artist,progress,reading.HasTimeline);
+                overlayFilled=true;
+            }
             else Paint("", "", 0, false);
         }
 
