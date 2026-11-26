@@ -1,0 +1,14 @@
+{
+  "game": "Minecraft: Java Edition",
+  "version": "1.8",
+  "releaseTime": "2014-09-02T08:24:35+00:00",
+  "manifest": "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+  "version_json": "https://piston-meta.mojang.com/v1/packages/9eb165eef46294062d8698c8a78e8ac914949e7a/1.8.json",
+  "version_sha1": "9eb165eef46294062d8698c8a78e8ac914949e7a",
+  "client": "https://launcher.mojang.com/v1/objects/d722504db9de2b47f46cc592b8528446272ae648/client.jar",
+  "client_sha1": "d722504db9de2b47f46cc592b8528446272ae648",
+  "client_bytes": 7746841,
+  "member": "assets/minecraft/textures/entity/steve.png",
+  "skin_sha1": "641094577ee247344afbfd7df3bd01e8b291a5a7",
+  "skin_sha256": "4c7b0468044bfecacc43d00a3a69335a834b73937688292c20d3988cae58248d"
+}

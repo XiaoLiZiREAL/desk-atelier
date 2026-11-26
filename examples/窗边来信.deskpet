@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<deskpetGift version="1">
+  <from>窗边手记</from>
+  <card>窗边的灯亮着，茶也刚泡好。以后你忙你的，我就在这里陪你。</card>
+  <theme>apricot</theme>
+  <chair on="1" x="0.35" y="0.87"/>
+  <lamp on="1" x="0.22" y="0.79"/>
+  <cup on="1" x="0.65" y="0.84"/>
+</deskpetGift>
