@@ -265,6 +265,10 @@ namespace DeskMate
             if (builtin!=null && (actions.Count==0 || sameActions(builtin,actions))) return builtin;
             if(actions.Count>0)
                 hash=Fingerprint(Encoding.UTF8.GetBytes(hash+String.Join("",actions.Select(a=>a.Key+Fingerprint(a.Value)))));
+            // Exact pixel signatures of the pre-1.6 classic Steve atlas and its
+            // complete official action pack. Edited drawings keep their own ID.
+            if(hash=="9522fd4640276df8e660655e741332af0aa69673027fa4c6a94b903de6188564" ||
+               hash=="da7cb07e35a372befbc7c2b33ee935d667041fba398b534737e45cc72c225715")return "steve";
             string id="custom-"+hash;
             Directory.CreateDirectory(root);
             string target=Path.Combine(root,id);

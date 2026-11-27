@@ -2,6 +2,7 @@ param(
     [string]$Program=(Join-Path $PSScriptRoot '..\build\DeskAtelier.exe'),
     [string]$Output=(Join-Path $PSScriptRoot '..\build\life-qa'),
     [switch]$RequireSteve,
+    [switch]$ContinuationsOnly,
     [switch]$CompileOnly
 )
 $ErrorActionPreference='Stop'
@@ -18,9 +19,10 @@ if([Environment]::Is64BitOperatingSystem -and ![Environment]::Is64BitProcess){$m
 foreach($name in 'System.Runtime','System.Runtime.InteropServices.WindowsRuntime','System.Collections'){$opts+="/r:$fx\$name.dll"}
 foreach($name in 'Windows.Foundation','Windows.Media','Windows.Storage'){$opts+="/r:$metadata\$name.winmd"}
 $exe=Join-Path $folder 'LifeChecks.exe'
-& "$fx\csc.exe" @opts "/out:$exe" (Join-Path $PSScriptRoot 'LifeChecks.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
+& "$fx\csc.exe" @opts "/out:$exe" (Join-Path $PSScriptRoot 'LifeChecks.cs') (Join-Path $PSScriptRoot 'ContinuationChecks.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
 if($LASTEXITCODE){throw 'Life UI verification harness failed to compile'}
 if(!$CompileOnly){
-    & $exe $folder $RequireSteve.IsPresent
+    $steveReference=(Resolve-Path (Join-Path $PSScriptRoot '../src/assets')).Path
+    & $exe $folder $RequireSteve.IsPresent $ContinuationsOnly.IsPresent $steveReference
     if($LASTEXITCODE){throw 'Life UI checks failed; see life-report.txt'}
 }

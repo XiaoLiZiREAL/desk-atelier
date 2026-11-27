@@ -21,6 +21,7 @@ namespace DeskMate
         {
             backpackButton = AttachmentButton("打开随身背包", "PetBackpack", BackpackArt(), "bag");
             panel.Children.Add(backpackButton);
+            InstallReturnedPaper(panel);
             sprite.AttachmentAt = point => ContainsSpritePoint(backpackButton, point);
             RefreshBagAttachment();
         }

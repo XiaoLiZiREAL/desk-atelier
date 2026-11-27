@@ -202,6 +202,7 @@ namespace DeskMate
         public bool CanAcceptPetDrop(IDataObject payload)
         {
             if (payload==null) return false;
+            if (app.IsPaperDrag(payload)) return true;
             try { return payload.GetDataPresent(DataFormats.FileDrop) || payload.GetDataPresent(DataFormats.UnicodeText) || payload.GetDataPresent(DataFormats.Text); }
             catch (ExternalException) { return false; }
         }
@@ -211,6 +212,7 @@ namespace DeskMate
             if (!CanAcceptPetDrop(payload)) return;
             try
             {
+                if (app.IsPaperDrag(payload)) { app.GiveDraggedPaper(); return; }
                 if (payload.GetDataPresent(DataFormats.FileDrop))
                 {
                     var paths=payload.GetData(DataFormats.FileDrop) as string[];

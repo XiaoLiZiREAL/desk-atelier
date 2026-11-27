@@ -19,6 +19,7 @@ namespace DeskMate
         static readonly string[] Faces={"#FFF2B8","#E0EFF9","#FADBD8"};
         static readonly string[] Edges={"#C8B477","#A5BECF","#D0AAA6"};
         static readonly string[] Folds={"#E7CC75","#AFCDE1","#E4AAA5"};
+        internal static Brush Face(int tone){return SystemParameters.HighContrast?SystemColors.WindowBrush:Ui.Color(Faces[tone>=0 && tone<Faces.Length?tone:0]);}
         int tone;
         bool lit;
         internal void SetTone(int value){tone=value;InvalidateVisual();}
@@ -38,7 +39,7 @@ namespace DeskMate
             const double fold=30;
             if(r<=fold+4 || b<=fold+4)return;
             bool contrast=SystemParameters.HighContrast;
-            Brush stock=contrast?SystemColors.WindowBrush:Ui.Color(Faces[tone]);
+            Brush stock=Face(tone);
             Brush edge=contrast?SystemColors.WindowTextBrush:Ui.Color(Edges[tone]);
             var pen=new Pen(edge,1);
             var face=Polygon(new Point(x,y),new Point(r-fold,y),new Point(r,y+fold),new Point(r,b),new Point(x,b));
@@ -68,7 +69,7 @@ namespace DeskMate
         StickyStock stickyStock;
         TextBox stickyEditor;
         TextBlock stickyHint,stickyCounter,stickyStatus;
-        Button stickyPin,stickyTrash,stickyUndo;
+        Button stickyPin,stickyTrash,stickyUndo,paperGrip;
         Path pinCap;
         DispatcherTimer stickySave;
         NoteItem stickyNote,deletedNote;
@@ -111,6 +112,7 @@ namespace DeskMate
             fold.Content=null;fold.Width=42;fold.Height=42;fold.HorizontalAlignment=HorizontalAlignment.Right;fold.VerticalAlignment=VerticalAlignment.Top;
             fold.MouseEnter+=delegate{stickyStock.HighlightFold(true);};fold.MouseLeave+=delegate{stickyStock.HighlightFold(false);};
             stickySurface.Children.Add(fold);
+            paperGrip=MakePaperGrip();stickySurface.Children.Add(paperGrip);
 
             var writing=new Grid{Margin=new Thickness(20,45,19,38)};
             var textHost=new FrameworkElementFactory(typeof(ScrollViewer),"PART_ContentHost");
@@ -171,6 +173,47 @@ namespace DeskMate
             return stickySurface;
         }
 
+        Button MakePaperGrip()
+        {
+            var grip=PaperAction("GivePaper","递给伙伴",delegate{FlushStickySave();app.GivePaper(stickyNote,stickyTone);});
+            grip.ToolTip="按住拖到小人身上，或点击递给它";
+            grip.Cursor=Cursors.Hand;grip.Padding=new Thickness(8,2,8,2);
+            grip.Height=30;grip.Margin=new Thickness(0,5,0,0);
+            grip.HorizontalAlignment=HorizontalAlignment.Center;grip.VerticalAlignment=VerticalAlignment.Top;
+            var contents=new StackPanel{Orientation=Orientation.Horizontal};
+            var dots=Ui.Icon("\uE76F",12,Ui.Muted);dots.Margin=new Thickness(0,0,5,0);contents.Children.Add(dots);
+            contents.Children.Add(Ui.Text("递给伙伴",11,Ui.Muted));grip.Content=contents;
+            Point start=new Point();bool armed=false;
+            grip.PreviewMouseLeftButtonDown+=delegate(object sender,MouseButtonEventArgs e){
+                start=e.GetPosition(grip);armed=grip.CaptureMouse();e.Handled=true;
+            };
+            grip.PreviewMouseMove+=delegate(object sender,MouseEventArgs e){
+                if(!armed || e.LeftButton!=MouseButtonState.Pressed)return;
+                var delta=e.GetPosition(grip)-start;
+                if(Math.Abs(delta.X)<SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(delta.Y)<SystemParameters.MinimumVerticalDragDistance)return;
+                armed=false;grip.ReleaseMouseCapture();FlushStickySave();
+                app.DragPaper(grip,stickyNote,stickyTone);e.Handled=true;
+            };
+            grip.LostMouseCapture+=delegate{armed=false;};
+            grip.PreviewMouseLeftButtonUp+=delegate(object sender,MouseButtonEventArgs e){
+                if(!armed)return;
+                armed=false;grip.ReleaseMouseCapture();e.Handled=true;
+                if(grip.IsMouseOver){FlushStickySave();app.GivePaper(stickyNote,stickyTone);}
+            };
+            return grip;
+        }
+
+        internal void OpenPaper(NoteItem paper)
+        {
+            int index=app.Data.Notes.IndexOf(paper);
+            if(index<0)return;
+            FlushStickySave();
+            if(paper.PaperTone>=0 && paper.PaperTone<3)stickyTone=paper.PaperTone;
+            SelectSticky(index,false);
+        }
+        internal void ShowPaperStatus(string message){stickyStatus.Text=message;stickyStatus.ToolTip=message;}
+
         bool FitsSticky(string addition)
         {
             // Keep a large legacy note editable and reject an over-limit paste
@@ -201,6 +244,7 @@ namespace DeskMate
                 if(index<0)notes.Insert(Math.Min(stickySlot,notes.Count),stickyNote);
                 stickyNote.Text=value;
             }
+            app.SheetEdited(stickyNote);
             UpdateStickyDetails();
             stickySave.Stop();stickySave.Start();
         }
@@ -236,6 +280,7 @@ namespace DeskMate
             stickyHint.Visibility=stickyEditor.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
             stickyEditor.IsReadOnly=index<0 && notes.Count>=StickyCapacity;
             stickyTrash.IsEnabled=index>=0;
+            paperGrip.IsEnabled=index>=0;
             stickyUndo.Visibility=deletedNote!=null && notes.Count<StickyCapacity?Visibility.Visible:Visibility.Collapsed;
             stickyStatus.Text="";
             if(stickyEditor.IsReadOnly)stickyStatus.Text="便签已满";
@@ -244,6 +289,7 @@ namespace DeskMate
                 stickyStatus.Text=(stickyNote.Done?"已完成":stickyNote.Notified?"已提醒":"提醒")+" · "+due.ToString("M/d HH:mm");
             }
             else if(index>=0 && stickyNote.Done)stickyStatus.Text="已完成";
+            else if(index>=0 && stickyNote.HeldByPet)stickyStatus.Text="伙伴已收好";
             stickyStatus.ToolTip=stickyStatus.Text;
             bool pinned=app.Data.StickyPinned;
             pinCap.Fill=SystemParameters.HighContrast?(pinned?SystemColors.HighlightBrush:SystemColors.WindowBrush):Ui.Color(pinned?"#A45D4E":"#FBF8E8");
@@ -272,6 +318,7 @@ namespace DeskMate
             if(index<0)return;
             deletedNote=stickyNote;deletedSlot=index;
             app.Data.Notes.RemoveAt(index);stickySave.Stop();app.Save();
+            app.RefreshReturnedPaper();
             SelectSticky(Math.Min(index,Math.Max(0,app.Data.Notes.Count-1)),true);
         }
         void RestoreSticky()
@@ -280,6 +327,7 @@ namespace DeskMate
             int index=Math.Min(deletedSlot,app.Data.Notes.Count);
             app.Data.Notes.Insert(index,deletedNote);deletedNote=null;
             stickySave.Stop();app.Save();SelectSticky(index,true);
+            app.RefreshReturnedPaper();
         }
         public void RefreshStickyCollection()
         {

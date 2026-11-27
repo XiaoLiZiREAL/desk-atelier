@@ -17,12 +17,12 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DeskMate;
 
-internal static class LifeChecks
+internal static partial class LifeChecks
 {
     static readonly BindingFlags Fields=BindingFlags.Instance|BindingFlags.Public|BindingFlags.NonPublic;
     static readonly List<string> lines=new List<string>();
     static Studio app;static PetWindow pet;
-    static string target,shots,state;static IntPtr petHandle;
+    static string target,shots,state,steveReference;static IntPtr petHandle;
     [StructLayout(LayoutKind.Sequential)] struct NativeRect{public int Left,Top,Right,Bottom;}
     [StructLayout(LayoutKind.Sequential)] struct NativePoint{public int X,Y;}
     [DllImport("user32.dll")]static extern bool GetWindowRect(IntPtr hwnd,out NativeRect rect);
@@ -70,6 +70,32 @@ internal static class LifeChecks
         bitmap.CopyPixels(result,bitmap.PixelWidth*4,0);return result;
     }
     static string Hash(byte[] bytes){using(var sha=SHA256.Create())return BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-","");}
+    static void CheckClassicSteve(string action,BitmapSource[] poses)
+    {
+        // The reference strips are rendered from the six rigid Java 1.8 biped transforms.
+        // An original standing/holding pose can legitimately repeat or move only a few pixels.
+        string path=Path.Combine(steveReference,"motion-steve-"+action+".png");
+        BitmapSource sheet;
+        using(var file=File.OpenRead(path))
+            sheet=new PngBitmapDecoder(file,BitmapCreateOptions.IgnoreColorProfile,BitmapCacheOption.OnLoad).Frames[0];
+        if(poses==null || poses.Length!=6 || sheet.PixelWidth!=1152 || sheet.PixelHeight!=208)
+            throw new InvalidDataException("Missing Steve Java 1.8 reference strip: "+action);
+        for(int frame=0;frame<6;frame++)
+        {
+            var pixels=Pixels(poses[frame]);
+            var reference=Pixels(new CroppedBitmap(sheet,new Int32Rect(frame*192,0,192,208)));
+            if(!pixels.SequenceEqual(reference))throw new Exception("Unexpected pose or prop in Steve/"+action+" frame "+frame);
+            int visible=0;
+            for(int y=0;y<208;y++)for(int x=0;x<192;x++)
+            {
+                if(pixels[(y*192+x)*4+3]<=36)continue;
+                visible++;
+                if(x==0 || x==191 || y==0 || y==207)throw new Exception("Clipped Steve/"+action+" frame "+frame);
+            }
+            if(visible<1500 || visible>37000)throw new Exception("Invalid visible coverage in Steve/"+action+" frame "+frame);
+        }
+        Need(true,"steve/"+action+" has six visible, unclipped frames matching the Java 1.8 reference strip");
+    }
     // Compare silhouettes and opaque-pixel color after compensating for horizontal/vertical displacement.
     static double Difference(byte[] a,byte[] b,int width,int height,out double bestOutline)
     {
@@ -98,6 +124,7 @@ internal static class LifeChecks
         foreach(var key in keys)
         {
             var frames=Poses(id,key);Need(frames!=null&&frames.Length==6,id+" / "+key+" six authored frames embedded and loadable");
+            if(id=="steve"){CheckClassicSteve(key,frames);continue;}
             var hashes=new HashSet<string>();var all=new List<byte[]>();var feet=new List<int>();
             foreach(var image in frames)
             {
@@ -229,12 +256,17 @@ internal static class LifeChecks
     [STAThread]public static int Main(string[] args)
     {
         target=Path.GetFullPath(args.Length>0?args[0]:"life-qa");shots=Path.Combine(target,"life-screens");Directory.CreateDirectory(shots);
+        steveReference=Path.GetFullPath(args.Length>3?args[3]:Path.Combine("src","assets"));
         state=Path.Combine(target,"isolated-life-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(state);
         Environment.SetEnvironmentVariable("DESKATELIER_DATA",state);bool ok=false;
         try
         {
             Say("Executable SHA256 "+Hash(File.ReadAllBytes(typeof(Studio).Assembly.Location)));
-            app=new Studio(state);app.StartStudio(null);pet=app.Pet;petHandle=new WindowInteropHelper(pet).Handle;Pump(150);
+            bool continuationsOnly=args.Length>2 && String.Equals(args[2],"True",StringComparison.OrdinalIgnoreCase);
+            app=new Studio(state);
+            if(continuationsOnly){app.Data.SingAlongEnabled=false;app.Data.HideFullscreen=false;app.Data.PetWelcomeSeen=true;}
+            app.StartStudio(null);pet=app.Pet;petHandle=new WindowInteropHelper(pet).Handle;Pump(150);
+            if(continuationsOnly){CheckContinuations();Say("ALL CONTINUATION CHECKS PASSED");ok=true;return 0;}
             Need(pet.IsVisible&&!app.Desk.IsVisible && app.Windows.OfType<Window>().Count(w=>w.IsVisible)==1,"default first launch shows only the desktop pet");
             ObserveFirstTea();ObserveGames();Blockers();VisitAndNotes();CheckArt("rem",false);CheckArt("kurisu",false);
             bool pending=args.Length<2||!String.Equals(args[1],"True",StringComparison.OrdinalIgnoreCase);
@@ -245,6 +277,7 @@ internal static class LifeChecks
             Until(()=>pet.CurrentActivity=="focus",2200,"Hitori starts by practicing guitar without user input");
             CaptureSignature("hitori","focus");
             Need(Store.Load().GuitarRoutine==1,"Hitori keeps her own routine progress");
+            CheckContinuations();
             Say("ALL LIFE CHECKS PASSED");ok=true;
         }
         catch(Exception e){Say("FAIL "+e.GetType().Name+" "+e.Message);Say(e.StackTrace??"");}

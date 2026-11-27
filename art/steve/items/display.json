@@ -1,0 +1,291 @@
+{
+  "bow_pulling_0": {
+    "rotation": [
+      5,
+      -100,
+      -45
+    ],
+    "translation": [
+      0.75,
+      0,
+      0.25
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "bow_pulling_1": {
+    "rotation": [
+      5,
+      -100,
+      -45
+    ],
+    "translation": [
+      0.75,
+      0,
+      0.25
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "bow_pulling_2": {
+    "rotation": [
+      5,
+      -100,
+      -45
+    ],
+    "translation": [
+      0.75,
+      0,
+      0.25
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "bow_standby": {
+    "rotation": [
+      5,
+      -100,
+      -45
+    ],
+    "translation": [
+      0.75,
+      0,
+      0.25
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "cobblestone": {
+    "rotation": [
+      10,
+      -45,
+      170
+    ],
+    "translation": [
+      0,
+      1.5,
+      -2.75
+    ],
+    "scale": [
+      0.375,
+      0.375,
+      0.375
+    ]
+  },
+  "dirt": {
+    "rotation": [
+      10,
+      -45,
+      170
+    ],
+    "translation": [
+      0,
+      1.5,
+      -2.75
+    ],
+    "scale": [
+      0.375,
+      0.375,
+      0.375
+    ]
+  },
+  "emerald": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -3
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  },
+  "fish_cod_raw": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -3
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  },
+  "fishing_rod_cast": {
+    "rotation": [
+      180,
+      90,
+      -35
+    ],
+    "translation": [
+      0,
+      0,
+      -3.5
+    ],
+    "scale": [
+      0.85,
+      0.85,
+      0.85
+    ]
+  },
+  "fishing_rod_uncast": {
+    "rotation": [
+      180,
+      90,
+      -35
+    ],
+    "translation": [
+      0,
+      0,
+      -3.5
+    ],
+    "scale": [
+      0.85,
+      0.85,
+      0.85
+    ]
+  },
+  "iron_pickaxe": {
+    "rotation": [
+      0,
+      90,
+      -35
+    ],
+    "translation": [
+      0,
+      1.25,
+      -3.5
+    ],
+    "scale": [
+      0.85,
+      0.85,
+      0.85
+    ]
+  },
+  "iron_sword": {
+    "rotation": [
+      0,
+      90,
+      -35
+    ],
+    "translation": [
+      0,
+      1.25,
+      -3.5
+    ],
+    "scale": [
+      0.85,
+      0.85,
+      0.85
+    ]
+  },
+  "leather_boots": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -2.5
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  },
+  "map_empty": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -3
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  },
+  "map_filled": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -3
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  },
+  "paper": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -3
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  },
+  "potion_bottle_drinkable": {
+    "rotation": [
+      -90,
+      0,
+      0
+    ],
+    "translation": [
+      0,
+      1,
+      -3
+    ],
+    "scale": [
+      0.55,
+      0.55,
+      0.55
+    ]
+  }
+}

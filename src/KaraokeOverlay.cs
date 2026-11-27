@@ -157,7 +157,7 @@ namespace DeskMate
         {
             bool display=!disposed && handle!=IntPtr.Zero && IsVisible && WindowState!=WindowState.Minimized &&
                 !manuallyHidden && !fullscreenHidden && !app.Data.Quiet && lyricLine.Length>0 &&
-                visitor==null && !pressing && !dragging && bubble.Visibility!=Visibility.Visible;
+                visitor==null && !PerformingPaper && !pressing && !dragging && bubble.Visibility!=Visibility.Visible;
             if(!display)
             {
                 StopSongMovement();

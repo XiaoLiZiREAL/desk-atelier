@@ -27,6 +27,7 @@ namespace DeskMate
             this.poses=poses;ends=new int[holds.Length];
             for(int i=0;i<holds.Length;i++)ends[i]=holds[i]+(i==0?0:ends[i-1]);
         }
+        ActionScore(params int[] holds):this(new[]{0,1,2,3,4,5},holds) {}
         public int At(long elapsed)
         {
             for(int i=0;i<ends.Length;i++)if(elapsed<ends[i])return poses[i];
@@ -38,9 +39,24 @@ namespace DeskMate
             {"mine",new ActionScore(new[]{0,1,2,1,3,1,3,4,5},new[]{650,460,200,360,230,430,270,750,730})},
             {"focus",new ActionScore(new[]{0,1,2,3,2,3,4,2,3,4,5},new[]{640,550,600,1400,770,1350,980,630,1270,820,650})},
             {"rest",new ActionScore(new[]{0,1,2,3,2,3,4,5},new[]{590,420,900,2400,820,1800,440,670})},
-            {"song",new ActionScore(new[]{0,1,2,3,1,4,2,5},new[]{160,230,210,290,160,260,280,260})}
+            {"song",new ActionScore(new[]{0,1,2,3,1,4,2,5},new[]{160,230,210,290,160,260,280,260})},
+            {"pick",new ActionScore(620,260,750,400,930,670)},
+            {"pickcatch",new ActionScore(620,260,350,430,670,820)},
+            {"bow",new ActionScore(660,540,710,1050,640,860)},
+            {"fold",new ActionScore(new[]{0,1,2,3,4,2,3,5},new[]{740,560,660,580,940,570,660,780})},
+            {"wipe",new ActionScore(new[]{0,1,2,3,2,3,4,3,5},new[]{730,560,520,530,460,520,1150,650,680})},
+            {"pen",new ActionScore(new[]{0,1,2,1,2,3,4,5},new[]{670,340,320,300,290,390,750,880})},
+            {"board",new ActionScore(new[]{0,1,2,1,2,3,4,5},new[]{740,470,550,440,480,1500,580,900})},
+            {"fish",new ActionScore(new[]{0,1,2,3,2,3,4,5},new[]{650,440,1350,390,820,320,560,1300})},
+            {"fishcatch",new ActionScore(new[]{0,1,2,3,2,3,4,5},new[]{650,440,1350,390,820,320,560,1750})},
+            {"pillar",new ActionScore(610,490,580,1230,640,880)},
+            {"bowdraw",new ActionScore(660,470,700,1100,540,680)},
+            {"blockguard",new ActionScore(600,460,570,980,480,710)},
+            {"handoff",new ActionScore(390,460,800,500,500,550)},
+            {"returnnote",new ActionScore(420,450,600,530,1380,720)}
         };
-        internal static readonly string[] Names={"tea","game","song","focus","rest","mine"};
+        internal static readonly string[] Names=scores.Keys.ToArray();
+        internal static readonly ActionScore TuneAfterBow=new ActionScore(new[]{1,2,3,2,5},new[]{400,560,520,500,680});
         public static ActionScore For(string key){return scores[key];}
         public static int SungPose(long elapsed,double fraction)
         {
@@ -62,10 +78,26 @@ namespace DeskMate
         readonly DeskChest[] boxArt=new DeskChest[3];
         readonly Button[] boxButtons=new Button[3];
         string lastDirection="";
-        static readonly string[] maidDay={"tea","game","focus","rest","visit","tea","focus","game","rest"};
-        static readonly string[] labDay={"focus","game","tea","rest","focus","visit","game","tea","rest"};
-        static readonly string[] minerDay={"mine","game","tea","focus","rest","mine","visit","tea","game"};
-        static readonly string[] guitarDay={"focus","tea","game","rest","focus","visit","tea","rest"};
+        static readonly string[] maidDay={"tea","game","fold","rest","visit","wipe","tea","focus","fold","game","rest","focus"};
+        static readonly string[] labDay={"focus","pen","tea","game","rest","board","visit","pen","tea","focus","rest","game"};
+        static readonly string[] minerDay={"mine","fish","tea","focus","game","pillar","visit","mine","rest","tea","game","focus",
+                                          "bowdraw","fish","mine","rest","blockguard","tea","focus","mine"};
+        static readonly string[] guitarDay={"focus","pick","tea","rest","game","bow","visit","focus","pick","tea","game","rest"};
+        static readonly string[] guestDay={"tea","game","focus","rest","visit","tea","focus","game","rest"};
+        static readonly string[] guestMinerDay={"mine","game","tea","focus","rest","mine","visit","tea","game"};
+        static readonly TimeSpan MaxInterruption=TimeSpan.FromMinutes(12);
+        sealed class InterruptedActivity
+        {
+            internal string Name,Hint;
+            internal BitmapSource[] Poses;
+            internal long Elapsed,InterruptedAt,RevealedFor;
+            internal int HiddenBox,Guess;
+            internal bool Tuning;
+        }
+        InterruptedActivity interrupted;
+        BitmapSource carriedPose;
+        bool bowTuning,cursorNearBow,bowApproached;
+        bool PerformingPaper { get { return performance=="handoff" || performance=="returnnote"; } }
         public string CurrentActivity { get { return visitor!=null?"visit":dancing?"song":performance; } }
         public bool OfferingGame { get { return soloGame && gameResultAt==0; } }
 
@@ -105,10 +137,11 @@ namespace DeskMate
         {
             var sheet=ActionFrames(character,action);
             if(sheet==null)return false;
-            StopPerformance();
+            InterruptPerformance();
             row=Idle;effectUntil=0;
             activePoses=sheet;performance=action;performanceStart=clock.ElapsedMilliseconds;
             independentPerformance=independent;
+            if(action=="bow")cursorNearBow=IsPointerNearPet();
             ShowPose(sheet[0]);
             if(independent && action=="game")StartBoxScene();
             return true;
@@ -117,6 +150,49 @@ namespace DeskMate
         {
             if(gameStage!=null)gameStage.Visibility=Visibility.Collapsed;
             activePoses=null;performance="";soloGame=false;gameResultAt=0;
+            independentPerformance=false;bowTuning=false;bowApproached=false;
+        }
+        void InterruptPerformance()
+        {
+            if(activePoses!=null && independentPerformance)
+            {
+                long now=clock.ElapsedMilliseconds;
+                interrupted=new InterruptedActivity {
+                    Name=performance,Poses=activePoses,Elapsed=Math.Max(0,now-performanceStart),InterruptedAt=now,
+                    HiddenBox=hiddenBox,Guess=winningGuess,Hint=lastDirection,
+                    RevealedFor=gameResultAt==0?-1:now-gameResultAt,Tuning=bowTuning
+                };
+            }
+            StopPerformance();
+        }
+        void ForgetPerformance()
+        {
+            interrupted=null;carriedPose=null;StopPerformance();
+        }
+        bool ResumePerformance(long now)
+        {
+            if(interrupted==null || CompanionOccupied() || (app.FocusActive && !app.FocusPaused))return false;
+            var saved=interrupted;interrupted=null;
+            performance=saved.Name;activePoses=saved.Poses;independentPerformance=true;
+            performanceStart=now-saved.Elapsed;row=Idle;effectUntil=0;bowTuning=saved.Tuning;
+            if(performance=="bow")cursorNearBow=IsPointerNearPet();
+            if(performance=="game")
+            {
+                soloGame=true;hiddenBox=saved.HiddenBox;winningGuess=saved.Guess;lastDirection=saved.Hint;
+                gameResultAt=saved.RevealedFor<0?0:now-saved.RevealedFor;
+                gameStage.Visibility=Visibility.Visible;
+                RenderBoxes(saved.Elapsed>=2700 && gameResultAt==0,gameResultAt!=0);
+            }
+            return AdvancePerformance(now);
+        }
+        internal void PlayPaperAction(bool returning)
+        {
+            if(disposed || app.Data.Quiet || !IsVisible || manuallyHidden || fullscreenHidden)return;
+            EndVisit();
+            StopSongMovement();
+            if(!BeginPerformance(returning?"returnnote":"handoff",false))
+                SetEffect(returning?Wave:Review,1600);
+            RefreshKaraokeOverlay();
         }
         void FinishPerformance()
         {
@@ -125,7 +201,7 @@ namespace DeskMate
         internal void OpeningTool()
         {
             EndIndependentVisit();
-            if(independentPerformance && activePoses!=null)FinishPerformance();
+            if(independentPerformance)InterruptPerformance();
         }
         void ReleaseCharacterActions(string old)
         {
@@ -137,9 +213,23 @@ namespace DeskMate
             if(activePoses==null)return false;
             long t=Math.Max(0,now-performanceStart);
             if(soloGame)return AdvanceBoxScene(now,t);
-            var score=ActionScore.For(performance);
+            if(performance=="bow" && !bowTuning)
+            {
+                if(NoticedAudience(IsPointerNearPet(),t))
+                {
+                    var tuning=ActionFrames(character,"focus");
+                    if(tuning!=null){activePoses=tuning;bowTuning=true;performanceStart=now;t=0;}
+                }
+            }
+            var score=bowTuning?ActionScore.TuneAfterBow:ActionScore.For(performance);
             if(t>=score.Duration){FinishPerformance();return false;}
             ShowPose(activePoses[score.At(t)]);return true;
+        }
+        bool NoticedAudience(bool near,long elapsed)
+        {
+            bowApproached=near && (bowApproached || !cursorNearBow);
+            cursorNearBow=near;
+            return bowApproached && elapsed>=1450 && elapsed<3800;
         }
         int RoutineIndex
         {
@@ -175,13 +265,32 @@ namespace DeskMate
             else if(app.Data.ActivityPace=="calm"){min=150;max=290;}
             return clock.ElapsedMilliseconds+1000*random.Next(min,max);
         }
+        bool ToolOpen()
+        {
+            return (quickMenu!=null && quickMenu.IsOpen) || menu.Visible ||
+                (app.Desk!=null && app.Desk.IsVisible) ||
+                (app.NotesDesk!=null && app.NotesDesk.IsVisible && !app.NotesDesk.KeepsStickyOpen);
+        }
+        bool MusicPlaying { get { return (app.Music!=null && app.Music.Playing) || (lyricPlaying && KaraokeVisible); } }
         bool CompanionOccupied()
         {
             return app.Data.Quiet || !IsVisible || manuallyHidden || fullscreenHidden || visitor!=null || dragging || pressing ||
-                (quickMenu!=null && quickMenu.IsOpen) || menu.Visible ||
-                (app.Desk!=null && app.Desk.IsVisible) ||
-                (app.NotesDesk!=null && app.NotesDesk.IsVisible && !app.NotesDesk.KeepsStickyOpen) ||
-                (app.Music!=null && app.Music.Playing);
+                pendingClickAt>0 || ToolOpen() || MusicPlaying;
+        }
+        string[] DailyRoutine()
+        {
+            switch(character)
+            {
+                case "hitori":return guitarDay;
+                case "kurisu":return labDay;
+                case "steve":return minerDay;
+                case "rem":return maidDay;
+            }
+            if(ActionFrames(character,"pick")!=null)return guitarDay;
+            if(ActionFrames(character,"pen")!=null)return labDay;
+            if(ActionFrames(character,"fish")!=null)return minerDay;
+            if(ActionFrames(character,"fold")!=null)return maidDay;
+            return ActionFrames(character,"mine")!=null?guestMinerDay:guestDay;
         }
         void Ambient()
         {
@@ -192,9 +301,11 @@ namespace DeskMate
                 if(!BeginPerformance("focus",false))SetEffect(Work,4200);
                 ambientAt=now+36000;return;
             }
-            var plan=character=="hitori"?guitarDay:character=="kurisu"?labDay:character=="steve"||ActionFrames(character,"mine")!=null?minerDay:maidDay;
+            var plan=DailyRoutine();
             int ix=Math.Max(0,RoutineIndex)%plan.Length;
             string action=plan[ix];
+            if(action=="pick" && random.Next(3)==0 && ActionFrames(character,"pickcatch")!=null)action="pickcatch";
+            if(action=="fish" && random.Next(4)==0 && ActionFrames(character,"fishcatch")!=null)action="fishcatch";
             if(action=="visit") StartVisit(true);
             else if(!BeginPerformance(action,true))
             {

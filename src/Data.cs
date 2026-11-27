@@ -14,6 +14,9 @@ namespace DeskMate
         public bool Done;
         public long DueUtc;
         public bool Notified;
+        public bool HeldByPet;
+        public int PaperTone = -1;
+        public string PaperTimeKey;
     }
 
     public class BagItem
@@ -272,7 +275,7 @@ namespace DeskMate
                 if (Data.FocusCount < Int32.MaxValue) Data.FocusCount++;
                 Data.FocusMinutesTotal = (int)Math.Min(Int32.MaxValue, (long)Data.FocusMinutesTotal + Data.PlannedMinutes);
             }
-            foreach (NoteItem note in due) note.Notified = true;
+            foreach (NoteItem note in due) { note.Notified = true; note.HeldByPet = true; }
             if (due.Count>0 && NotesDesk!=null && NotesDesk.IsVisible) NotesDesk.RefreshStickyCollection();
             Save();
             List<string> messages = new List<string>();
@@ -282,6 +285,7 @@ namespace DeskMate
                     String.Join("、", due.Take(2).Select(n => ReminderPreview(n.Text))) +
                     (due.Count > 2 ? " 等" : ""));
             Notify(String.Join("　", messages));
+            RefreshReturnedPaper();
         }
 
         static string ReminderPreview(string text)

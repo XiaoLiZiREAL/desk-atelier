@@ -93,7 +93,7 @@ namespace DeskMate
             sprite.MouseLeftButtonDown += OnPress;
             sprite.MouseMove += OnMove;
             sprite.MouseLeftButtonUp += OnRelease;
-            sprite.LostMouseCapture += delegate { pressing = dragging = false; };
+            sprite.LostMouseCapture += delegate { pressing = dragging = false; carriedPose=null; };
             sprite.MouseRightButtonUp += delegate(object sender, MouseButtonEventArgs args) {
                 pendingClickAt = 0;
                 OpenQuickMenu(true);
@@ -138,9 +138,11 @@ namespace DeskMate
             display.DropDownItems.Add("回到屏幕右下角",null,delegate{Reveal();PlaceDefault();RememberPosition();});
             visibilityItem=AddTray("收起桌宠",ToggleVisibility);
             AddTray("退出",delegate{app.Quit();});
-            menu.Opening+=delegate{UpdateMenu();};tray.ContextMenuStrip=menu;
+            menu.Opening+=delegate{OpeningTool();UpdateMenu();};tray.ContextMenuStrip=menu;
             tray.MouseDoubleClick+=delegate(object sender,Forms.MouseEventArgs e){if(e.Button==Forms.MouseButtons.Left)ShowQuickMenu();};
-            tray.BalloonTipClicked+=delegate{app.Open(noticePage);};
+            tray.BalloonTipClicked+=delegate{
+                if(noticePage!="notes" || !app.TakeReturnedPaper())app.Open(noticePage);
+            };
         }
         Forms.ToolStripMenuItem AddTray(string label,Action click)
         {
@@ -155,6 +157,7 @@ namespace DeskMate
         }
         void OpenQuickMenu(bool atPointer)
         {
+            OpeningTool();
             if(quickMenu!=null)quickMenu.IsOpen=false;
             quickMenu=CreateOverlayMenu();quickMenu.PlacementTarget=sprite;
             quickMenu.Placement=atPointer?System.Windows.Controls.Primitives.PlacementMode.MousePoint:System.Windows.Controls.Primitives.PlacementMode.Left;
@@ -217,6 +220,7 @@ namespace DeskMate
             manuallyHidden = true;
             pendingClickAt = 0;
             EndVisit();
+            ForgetPerformance();
             Hide();
         }
 
@@ -249,7 +253,7 @@ namespace DeskMate
             if (character != wanted)
             {
                 EndVisit();
-                StopPerformance();
+                ForgetPerformance();
                 ReleaseCharacterActions(character);
                 if (character != null && character != "rem" && character != "kurisu") art.Remove(character);
                 character = wanted;
@@ -264,7 +268,7 @@ namespace DeskMate
             tray.Text = app.CharacterName + " · 桌面伙伴";
             if (visitor != null) visitor.Layer.Topmost = Topmost;
             if (app.Data.Quiet) bubble.Visibility = Visibility.Collapsed;
-            if(app.Data.Quiet){EndIndependentVisit();StopPerformance();}
+            if(app.Data.Quiet){EndIndependentVisit();ForgetPerformance();}
             if(schedulePace!=app.Data.ActivityPace)RefreshRoutinePace();
             if (!app.Data.HideFullscreen && fullscreenHidden)
             {
@@ -362,9 +366,18 @@ namespace DeskMate
             if (!pressing) return;
             NativePoint p;
             if (!GetCursorPos(out p)) return;
-            int dx = p.X - pressPoint.X, dy = p.Y - pressPoint.Y;
+            UpdateDrag(p.X-pressPoint.X,p.Y-pressPoint.Y);
+        }
+        private void UpdateDrag(int dx,int dy)
+        {
             if (!dragging && Math.Abs(dx) + Math.Abs(dy) < 6) return;
-            if (!dragging) { EndVisit(); StopPerformance(); dragging = true; pendingClickAt = 0; bubble.Visibility = Visibility.Collapsed; }
+            if (!dragging)
+            {
+                EndVisit();
+                carriedPose=independentPerformance?sprite.Source as BitmapSource:null;
+                InterruptPerformance();
+                dragging=true;pendingClickAt=0;bubble.Visibility=Visibility.Collapsed;
+            }
             int targetRow = dx < 0 ? Leftward : Right;
             if (row != targetRow) { row = targetRow; shownSince = clock.ElapsedMilliseconds; }
             Position(pressWindow.X + dx, pressWindow.Y + dy);
@@ -375,12 +388,13 @@ namespace DeskMate
             if (!pressing) return;
             bool moved = dragging;
             pressing = dragging = false;
+            carriedPose=null;
             sprite.ReleaseMouseCapture();
             if (moved)
             {
                 ClampCurrent();
                 RememberPosition();
-                SetEffect(Idle, 0);
+                if(!ResumePerformance(clock.ElapsedMilliseconds))SetEffect(Idle,0);
             }
             else pendingClickAt = clock.ElapsedMilliseconds + Forms.SystemInformation.DoubleClickTime;
             e.Handled = true;
@@ -388,7 +402,7 @@ namespace DeskMate
 
         private void SetEffect(int newRow, int duration)
         {
-            StopPerformance();
+            InterruptPerformance();
             row = newRow;
             shownSince = clock.ElapsedMilliseconds;
             effectUntil = shownSince + duration;
@@ -438,8 +452,9 @@ namespace DeskMate
         private void Tick(object sender, EventArgs e)
         {
             long now = clock.ElapsedMilliseconds;
-            if(worldTick!=0 && now-worldTick>12000){StopPerformance();EndVisit();RefreshRoutinePace();}
+            if(worldTick!=0 && now-worldTick>12000){ForgetPerformance();EndVisit();RefreshRoutinePace();}
             worldTick=now;
+            if(interrupted!=null && now-interrupted.InterruptedAt>MaxInterruption.TotalMilliseconds)interrupted=null;
             if (now >= shellCheckAt && !pressing)
             {
                 shellCheckAt = now + 1450;
@@ -453,7 +468,8 @@ namespace DeskMate
             }
             timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null ? 34 : 80);
             RefreshKaraokeOverlay();
-            if (!IsVisible) { EndVisit(); StopPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            if (!IsVisible) { EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            if(dragging && carriedPose!=null){ShowPose(carriedPose);return;}
             if (now >= speechUntil && bubble.Visibility == Visibility.Visible) bubble.Visibility = Visibility.Collapsed;
             if (pendingClickAt > 0 && now >= pendingClickAt)
             {
@@ -465,21 +481,32 @@ namespace DeskMate
             if (visitor != null) {UpdateVisit(now);if(visitor!=null && visitor.Phase==2 && visitor.HostTea!=null)return;}
             if(visitor==null && activePoses!=null && !dragging)
             {
-                if(independentPerformance && (app.Data.Quiet || (app.Music!=null && app.Music.Playing) ||
-                    (app.FocusActive && !app.FocusPaused && performance!="focus")))FinishPerformance();
+                if(independentPerformance && (app.Data.Quiet || MusicPlaying || ToolOpen() ||
+                    (app.FocusActive && !app.FocusPaused && performance!="focus")))InterruptPerformance();
                 else if(AdvancePerformance(now))return;
             }
             if (visitor == null && !dragging && now >= effectUntil)
             {
                 if (row != Idle) SetEffect(Idle, 0);
                 if (!pressing && AnimateKaraoke(now)) return;
-                if (!KaraokeVisible && now >= ambientAt && !pressing) {Ambient();if(activePoses!=null || visitor!=null)return;}
+                if(ResumePerformance(now))return;
+                if (!MusicPlaying && now >= ambientAt && !pressing) {Ambient();if(activePoses!=null || visitor!=null)return;}
                 if (row == Idle && !pressing && TryLook(now)) return;
             }
             int frame = (int)(((now - shownSince) / FrameMs[row]) % Counts[row]);
             DrawFrame(row, Math.Max(0, frame));
         }
 
+        private bool IsPointerNearPet()
+        {
+            NativePoint p;
+            if(!sprite.IsVisible || !GetCursorPos(out p))return false;
+            Point center=sprite.PointToScreen(new Point(sprite.ActualWidth*.5,sprite.ActualHeight*.48));
+            Point edge=sprite.PointToScreen(new Point(sprite.ActualWidth,sprite.ActualHeight*.48));
+            double radius=Math.Max(32,(edge.X-center.X)*1.8);
+            double dx=p.X-center.X,dy=p.Y-center.Y;
+            return dx*dx+dy*dy<radius*radius;
+        }
         private bool TryLook(long now)
         {
             if (frames.Length < 11) return false;
@@ -560,7 +587,7 @@ namespace DeskMate
         private void StartVisit(bool independent)
         {
             if (disposed || visitor != null) return;
-            StopPerformance();
+            InterruptPerformance();
             Reveal();
             if (handle == IntPtr.Zero) return;
             NativeRect r;
@@ -634,23 +661,24 @@ namespace DeskMate
                 bool rem = character == "rem";
                 switch (phase)
                 {
-                    case 0: SetEffect(Wait, 3200); break;
+                    case 0: SetEffect(character=="steve"?Idle:Wait, 3200); break;
                     case 1:
-                        SetEffect(Wave, 2100);
+                        SetEffect(character=="steve"?Idle:Wave, 2100);
                         if (!app.Data.Quiet)
                         {
                             switch(character) {
                                 case "rem": Say("红莉栖小姐，刚好泡了茶。");break;
                                 case "kurisu": Say("蕾姆？来得正好，实验告一段落了。");break;
                                 case "hitori": Say("蕾姆……要听我刚练好的那一小段吗？");break;
+                                case "steve": Say("蕾姆，一起歇一会儿吧。");break;
                                 default: Say("蕾姆，来窗边一起坐坐吧。");break;
                             }
                         }
                         break;
-                    case 2: SetEffect(Review, 3300); break;
+                    case 2: SetEffect(character=="steve"?Idle:Review, 3300); break;
                     case 3: case 4:
-                        SetEffect(Wave, 2200);
-                        if (phase == 3 && !app.Data.Quiet) Say(rem ? "下次见，杯子放这里就好。" : "茶很好喝。下次换我请你。");
+                        SetEffect(character=="steve"?Idle:Wave, 2200);
+                        if (phase == 3 && !app.Data.Quiet) Say(character=="steve"?"下次见。":rem ? "下次见，杯子放这里就好。" : "茶很好喝。下次换我请你。");
                         break;
                 }
             }

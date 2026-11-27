@@ -19,8 +19,13 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'assets') 
 $hitori=Join-Path $PSScriptRoot '../art/hitori'
 $params += "/resource:$hitori/atlas.png,art.hitori.png"
 $params += "/resource:$hitori/portrait.png,art.hitori-still.png"
-foreach ($action in 'tea','game','song','focus','rest') {
-    $params += "/resource:$hitori/actions/$action.png,art.motion-hitori-$action.png"
+foreach ($role in 'hitori','rem','kurisu') {
+    foreach ($strip in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "../art/$role/actions") -Filter '*.png' -File) {
+        $asset="motion-$role-"+$strip.Name
+        if (!(Test-Path -LiteralPath (Join-Path "$PSScriptRoot/assets" $asset))) {
+            $params += "/resource:$($strip.FullName),art.$asset"
+        }
+    }
 }
 foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cs') { $params += $file.FullName }
 & (Join-Path $framework 'csc.exe') @params
