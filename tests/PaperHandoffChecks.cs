@@ -187,12 +187,14 @@ class PaperHandoffChecks
         long now=DateTime.UtcNow.Ticks;
         app.Data.Notes.Add(new NoteItem{Text="上次还没收的便签",HeldByPet=true,PaperTone=2,Notified=true,DueUtc=now-100000});
         app.Data.Notes.Add(new NoteItem{Text="关机期间到点",HeldByPet=true,PaperTone=1,DueUtc=now-1});
+        app.Data.Notes.Add(new NoteItem{Text="每周五下午四点交周报",HeldByPet=true,PaperRepeatKey="32/960",PaperTimeKey="repeat:32/960",
+            AttachmentPaths=new List<string>{Path.Combine(app.UserFolder,"周报.xlsx")},DueUtc=now});
         app.Save();
     }
     static void VerifyRestart()
     {
         var receive=Part<Button>(app.Pet,"ReceivePaper");
-        Check(receive.IsVisible && app.Data.Notes.Count(n=>n.HeldByPet && n.Notified)==2,
+        Check(receive.IsVisible && app.Data.Notes.Count(n=>n.HeldByPet && n.Notified)==3,
             "new process restores a pending slip and catches up an overdue sheet");
         Click(receive);Pump();
         Check(Part<TextBox>(app.NotesDesk,"StickyEditor").Text=="上次还没收的便签" &&
@@ -200,10 +202,82 @@ class PaperHandoffChecks
             "oldest pending paper opens with its original tint and the next slip awaits collection");
         Click(receive);Pump();
         Check(Part<TextBox>(app.NotesDesk,"StickyEditor").Text=="关机期间到点" &&
-            app.Data.Notes.All(n=>n.Done) && !receive.IsVisible,"both recovered sheets are acknowledged exactly once");
+            app.Data.Notes.Count(n=>n.Done)==2,"both recovered single-use sheets are acknowledged exactly once");
+        var weekly=app.Data.Notes.Single(n=>n.PaperRepeatKey!=null);
+        Check(weekly.AttachmentPaths.Count==1 && Part<Button>(app.Pet,"OpenReturnedPaperFile").IsVisible,
+            "an overdue weekly note and its attached path survive process restart");
+        Click(receive);app.TickTools();Pump();
+        Check(!receive.IsVisible && weekly.HeldByPet && !weekly.Notified && weekly.DueUtc>DateTime.UtcNow.Ticks &&
+            app.Data.Notes.Count==3,"weekly recovery advances one original paper without replaying missed reminders");
+    }
+    static void DropFiles(TextBox editor,params string[] paths)
+    {
+        var data=new DataObject(DataFormats.FileDrop,paths);
+        var ctor=typeof(DragEventArgs).GetConstructors(Hidden).Single();
+        var args=(DragEventArgs)ctor.Invoke(new object[]{data,DragDropKeyStates.None,DragDropEffects.Copy,editor,new Point(10,10)});
+        args.RoutedEvent=DragDrop.PreviewDropEvent;editor.RaiseEvent(args);Pump();
+        Check(args.Handled,"the sticky sheet handles Explorer file drops over the writing area");
+    }
+    static void WaitForFile(string path)
+    {
+        var clock=System.Diagnostics.Stopwatch.StartNew();
+        while(!File.Exists(path) && clock.ElapsedMilliseconds<7000){Pump();Thread.Sleep(50);}
+        Check(File.Exists(path),"clicking the attachment launches its original Windows file");
+        File.Delete(path);
+    }
+    static void WeeklyAttachment()
+    {
+        app.Open("notes");Pump();
+        var page=app.NotesDesk;var editor=Part<TextBox>(page,"StickyEditor");
+        var grip=Part<Button>(page,"GivePaper");
+        for(int i=0;grip.IsEnabled && i<=app.Data.Notes.Count;i++)Click(Part<Button>(page,"StickyFold"));
+        Check(!grip.IsEnabled,"weekly attachment test starts on a fresh sheet");
+        string path=Path.Combine(app.UserFolder,"周报.xlsx"),marker=Path.Combine(app.UserFolder,"paper-opened.txt");
+        File.WriteAllText(path,"attachment fixture");
+        string probe=typeof(PaperHandoffChecks).Assembly.Location;
+        Environment.SetEnvironmentVariable("DESKATELIER_TEST_FILE_OPENED",marker);
+        DropFiles(editor,path,probe,path);
+        var note=app.Data.Notes.Single(n=>n.AttachmentPaths.Count==2);
+        Check(note.Text=="" && grip.IsEnabled && Store.Load().Notes.Any(n=>n.AttachmentPaths.SequenceEqual(note.AttachmentPaths)),
+            "an attachment-only draft saves paths once in drop order");
+        editor.Text="每周五下午四点交周报";Click(grip);
+        long first=note.DueUtc;
+        Check(first>DateTime.UtcNow.Ticks && note.PaperRepeatKey=="32/960" && Store.Load().Notes.Any(n=>n.DueUtc==first && n.PaperRepeatKey=="32/960"),
+            "handing over the original paper schedules and saves the weekly rule");
+        editor.Text="每周五下午四点交财务周报";
+        Check(note.DueUtc==first,"editing the report description keeps its weekly occurrence");
+        note.DueUtc=DateTime.UtcNow.AddDays(-35).Ticks;app.TickTools();app.TickTools();Pump();
+        var open=Part<Button>(app.Pet,"OpenReturnedPaperFile");
+        Check(open.IsVisible && AutomationProperties.GetName(open).Contains("周报.xlsx"),"the overdue return slip offers the attached report");
+        File.Move(path,path+".moved");Click(open);Pump();
+        Check(note.Notified && open.IsVisible && editor.Text==note.Text,"missing original reopens its paper and preserves the pending reminder");
+        Click(Part<Button>(page,"DetachPaperFile"));
+        Check(File.Exists(path+".moved") && note.AttachmentPaths.SequenceEqual(new[]{probe}),"unlinking a moved file leaves the original alone");
+        Click(Part<Button>(page,"OpenPaperFile"));WaitForFile(marker);
+        Check(note.Notified,"opening a reference on the sheet does not acknowledge the waiting reminder");
+        Click(open);WaitForFile(marker);
+        Check(!note.Notified && !note.Done && !open.IsVisible && note.DueUtc==first && note.AttachmentPaths.Single()==probe,
+            "one click opens the returned file, skips missed weeks, and keeps the original sheet");
+        note.DueUtc=DateTime.UtcNow.AddSeconds(-1).Ticks;app.TickTools();Click(Part<Button>(app.Pet,"SnoozePaper"));
+        long snooze=note.DueUtc;Click(Part<Button>(page,"SetPaperTime"));Click(Part<Button>(page,"ConfirmPaperTime"));
+        Check(note.DueUtc==snooze && note.PaperRepeatKey=="32/960","confirming a snoozed occurrence preserves the weekly wall clock");
+        Click(Part<Button>(page,"SetPaperTime"));Part<RadioButton>(page,"PaperRepeat1").IsChecked=true;Click(Part<Button>(page,"ConfirmPaperTime"));
+        Check(note.PaperRepeatKey.StartsWith("127/"),"changing frequency in the clock picker arms the new cycle");
+        Click(Part<Button>(page,"SetPaperTime"));Click(Part<Button>(page,"KeepPaperOnly"));
+        Check(note.PaperRepeatKey==null && note.DueUtc==0,"keep-only clears future cycles and retains the file");
+        editor.Text="";Click(Part<Button>(page,"DetachPaperFile"));
+        Check(!app.Data.Notes.Contains(note) && File.Exists(probe),"removing the last file from an empty draft releases its slot");
+        Environment.SetEnvironmentVariable("DESKATELIER_TEST_FILE_OPENED",null);
+        page.Close();
     }
     [STAThread] static int Main(string[] args)
     {
+        if(args.Length==0){
+            // When opened as the controlled attachment fixture, leave a receipt in the isolated test profile.
+            string marker=Environment.GetEnvironmentVariable("DESKATELIER_TEST_FILE_OPENED");
+            if(marker==null)return 2;
+            File.WriteAllText(marker,"opened");return 0;
+        }
         string folder=Path.GetFullPath(args[0]);
         Directory.CreateDirectory(folder);Environment.SetEnvironmentVariable("DESKATELIER_DATA",folder);
         try{
@@ -211,7 +285,7 @@ class PaperHandoffChecks
             app.Data.SingAlongEnabled=false;app.StartStudio(null);
             if(args.Contains("--restart"))VerifyRestart();
             else{
-                Exercise();
+                Exercise();WeeklyAttachment();
                 if(args.Contains("--pointer"))DragOriginal();
                 PrepareRestart();
             }

@@ -53,7 +53,14 @@ namespace DeskMate
             {"bowdraw",new ActionScore(660,470,700,1100,540,680)},
             {"blockguard",new ActionScore(600,460,570,980,480,710)},
             {"handoff",new ActionScore(390,460,800,500,500,550)},
-            {"returnnote",new ActionScore(420,450,600,530,1380,720)}
+            {"returnnote",new ActionScore(420,450,600,530,1380,720)},
+            {"projectstart",new ActionScore(850,780,1100,850,1250,1100)},
+            {"projectwork",new ActionScore(900,940,1050,870,1100,1320)},
+            {"projectfinish",new ActionScore(780,820,950,850,1100,1950)},
+            {"propbridge",new ActionScore(80,80,100,100,110,90)},
+            {"turnstep",new ActionScore(80,90,100,110,120,140)},
+            {"penbridge",new ActionScore(80,90,100,100,110,90)},
+            {"toolbridge",new ActionScore(80,90,100,100,110,90)}
         };
         internal static readonly string[] Names=scores.Keys.ToArray();
         internal static readonly ActionScore TuneAfterBow=new ActionScore(new[]{1,2,3,2,5},new[]{400,560,520,500,680});
@@ -88,17 +95,17 @@ namespace DeskMate
         static readonly TimeSpan MaxInterruption=TimeSpan.FromMinutes(12);
         sealed class InterruptedActivity
         {
-            internal string Name,Hint;
+            internal string Name,Hint,Bridge;
             internal BitmapSource[] Poses;
             internal long Elapsed,InterruptedAt,RevealedFor;
-            internal int HiddenBox,Guess;
+            internal int HiddenBox,Guess,Grip;
             internal bool Tuning;
         }
         InterruptedActivity interrupted;
         BitmapSource carriedPose;
         bool bowTuning,cursorNearBow,bowApproached;
         bool PerformingPaper { get { return performance=="handoff" || performance=="returnnote"; } }
-        public string CurrentActivity { get { return visitor!=null?"visit":dancing?"song":performance; } }
+        public string CurrentActivity { get { return visitor!=null?"visit":dancing?"song":bridgeKind=="pickup"?"pickup":performance; } }
         public bool OfferingGame { get { return soloGame && gameResultAt==0; } }
 
         internal BitmapSource[] ActionFrames(string id,string key)
@@ -139,10 +146,11 @@ namespace DeskMate
             if(sheet==null)return false;
             InterruptPerformance();
             row=Idle;effectUntil=0;
-            activePoses=sheet;performance=action;performanceStart=clock.ElapsedMilliseconds;
+            activePoses=sheet;performance=action;
+            performanceStart=bridgeKind=="setdown"?BridgeEnd:clock.ElapsedMilliseconds;
             independentPerformance=independent;
             if(action=="bow")cursorNearBow=IsPointerNearPet();
-            ShowPose(sheet[0]);
+            if(bridgeKind!="setdown")ShowPose(sheet[0]);
             if(independent && action=="game")StartBoxScene();
             return true;
         }
@@ -157,17 +165,19 @@ namespace DeskMate
             if(activePoses!=null && independentPerformance)
             {
                 long now=clock.ElapsedMilliseconds;
+                long elapsed=bridgeKind=="pickup"?pickupElapsed:Math.Max(0,now-performanceStart);
                 interrupted=new InterruptedActivity {
-                    Name=performance,Poses=activePoses,Elapsed=Math.Max(0,now-performanceStart),InterruptedAt=now,
+                    Name=performance,Poses=activePoses,Elapsed=elapsed,InterruptedAt=now,
                     HiddenBox=hiddenBox,Guess=winningGuess,Hint=lastDirection,
                     RevealedFor=gameResultAt==0?-1:now-gameResultAt,Tuning=bowTuning
                 };
+                if(!dragging)SetPropAside(interrupted);
             }
             StopPerformance();
         }
         void ForgetPerformance()
         {
-            interrupted=null;carriedPose=null;StopPerformance();
+            interrupted=null;parkedProp.Source=null;carriedPose=null;ClearBridge();StopPerformance();
         }
         bool ResumePerformance(long now)
         {
@@ -175,6 +185,12 @@ namespace DeskMate
             var saved=interrupted;interrupted=null;
             performance=saved.Name;activePoses=saved.Poses;independentPerformance=true;
             performanceStart=now-saved.Elapsed;row=Idle;effectUntil=0;bowTuning=saved.Tuning;
+            if(saved.Bridge!=null && BeginBridge("pickup",ActionFrames(character,saved.Bridge),5,saved.Grip))
+            {
+                parkedProp.Source=null;pickupElapsed=saved.Elapsed;
+                performanceStart=BridgeEnd-saved.Elapsed;
+                return true;
+            }
             if(performance=="bow")cursorNearBow=IsPointerNearPet();
             if(performance=="game")
             {
@@ -196,6 +212,7 @@ namespace DeskMate
         }
         void FinishPerformance()
         {
+            CompleteProjectChapter();
             StopPerformance();SetEffect(Idle,0);ambientAt=NextAmbient();
         }
         internal void OpeningTool()
@@ -301,6 +318,7 @@ namespace DeskMate
                 if(!BeginPerformance("focus",false))SetEffect(Work,4200);
                 ambientAt=now+36000;return;
             }
+            if(TryStartProject())return;
             var plan=DailyRoutine();
             int ix=Math.Max(0,RoutineIndex)%plan.Length;
             string action=plan[ix];

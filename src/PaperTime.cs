@@ -7,7 +7,7 @@ namespace DeskMate
 {
     internal sealed class PaperTime
     {
-        internal string Key, Error;
+        internal string Key, Error, RepeatKey;
         internal long Utc;
 
         const string Digits = "0-9零〇一二两三四五六七八九十百千";
@@ -32,6 +32,13 @@ namespace DeskMate
         static readonly Regex BeforeDuration = Pattern(@"(?:提醒我?|倒计时|计时|再过|(?:^|[\s,，。；！?？、]|请|你)过)\s*[：:,，]?\s*$");
         static readonly Regex AfterDuration = Pattern(@"^\s*(?:的)?(?:再)?(?:提醒|倒计时|计时|闹钟|叫我|通知我)");
         static readonly Regex Repeated = Pattern(@"每(?:隔|逢|个?星期|个?礼拜|个?周|天|日|晚|早|月|年|小时|分钟)|(?:每(?:过)?|隔)\s*(?:半|[" + Digits + @"]+)\s*个?半?\s*(?:天|小时|分钟|钟头|星期|周)|工作日|隔天|隔日");
+        static readonly Regex RepeatRule = Pattern(
+            @"(?<cycle>每(?:个)?(?:工作日|(?:周|星期|礼拜)一(?:到|至)(?:周|星期|礼拜)?五)|(?:每(?:个|逢)?)(?:周|星期|礼拜)(?<on>[一二三四五六日天1-7])|每天|每日|每晚|每早)" +
+            @"\s*(?:[,，]?\s*(?:请)?(?:提醒我|叫我|记得)?(?:在|到)?\s*)(?<period>" + Period + @")?\s*" + Clock);
+        // Bounded or alternate-week schedules cannot be represented by a weekly day mask.
+        static readonly Regex LimitedRepeat = Pattern(@"(?:截止|截至|直到|最后一次|到期为止)|" +
+            @"(?:持续|连续|一连|共计?|一共|为期|只(?:提醒)?|限)\s*" + N + @"\s*个?\s*(?:天|周|礼拜|星期|月|年|次)|" +
+            N + @"\s*个?\s*(?:周|礼拜|星期|天|月|年)\s*(?:提醒)?\s*(?:一次|一回)");
         static readonly Regex Negated = Pattern(@"(?:不要|不用|别再?|取消|撤销|不必|不需要|无需|不想要?)\s*(?:再|这个|设置|给我|帮我)?\s*(?:提醒|通知|叫我|闹钟)");
         static readonly Regex Vague = Pattern(@"待会儿?|等会儿?|过会儿?|一会儿?|过一阵|过阵子|过段时间|回头再|稍后|晚点|改天|周末|月底|月初|明后天|几(?:分钟|小时|天|点钟)|有空时");
         static readonly Regex BeforeAmbiguous = Pattern(@"(?:不是|不要|不在|别在|大约|大概|差不多|不晚于|不早于|最晚|最早|提前|延后|前|(?:[" + Digits + @"]\s*(?:到|至|或|~|～|-))|(?:本|这|下下?|上)(?:周|星期|礼拜|个?月)|明年|今年|后年|[" + Digits + @"](?:年|月|日|号)|[0-9]+[-/.][0-9]+(?:[-/.][0-9]+)?|[-−.])\s*(?:在)?\s*$");
@@ -56,7 +63,8 @@ namespace DeskMate
             if (!token.Groups["hour"].Success || token.Groups["date"].Success || token.Groups["period"].Success ||
                 token.Groups["colon"].Success) return false;
             if (before.EndsWith("第",StringComparison.Ordinal) || NonClockNoun.IsMatch(after)) return true;
-            switch (token.Value.TrimEnd())
+            // The repeat token also contains the prefix (e.g. 每天). Inspect just its clock.
+            switch (token.Value.Substring(token.Groups["hour"].Index-token.Index).TrimEnd())
             {
                 case "一点": case "1点": return SmallAmount.IsMatch(after);
                 case "一时": return after.StartsWith("间") || after.StartsWith("冲动");
@@ -123,7 +131,7 @@ namespace DeskMate
             Match first = Tokens.Match(value);
             bool hasTokens = first.Success;
             if ((hasTokens || reminder) && Negated.IsMatch(value)) return Ask("这句话写了取消提醒，请删去时间或改写提醒要求");
-            if ((hasTokens || reminder) && Repeated.IsMatch(value)) return Ask("便签支持单次提醒，请写下一次的日期和时间");
+            if ((hasTokens || reminder) && Repeated.IsMatch(value)) return ReadRepeat(value, now);
             Match vague = Vague.Match(value);
             if (vague.Success && (hasTokens || reminder || vague.Index == 0)) return Unclear();
             PaperTime result = null;
@@ -184,22 +192,112 @@ namespace DeskMate
             if (total < 1 || total > 10080) return Ask("提醒可设在 1 分钟到 7 天后");
             return new PaperTime { Key = "+" + total, Utc = now.ToUniversalTime().AddMinutes(total).Ticks };
         }
-        static PaperTime WallTime(GroupCollection tags, DateTime now)
+        // A repeating note stores the local wall clock and a bit for each weekday.
+        // Derive the next future date, never one notification per missed occurrence.
+        internal const int EveryDay=127, MondayToFriday=62;
+        internal static string RepeatId(int days, int minute)
         {
-            string date = tags["date"].Value, period = tags["period"].Value;
+            return days.ToString(CultureInfo.InvariantCulture)+"/"+minute.ToString(CultureInfo.InvariantCulture);
+        }
+        static bool RepeatParts(string key, out int days, out int minute)
+        {
+            days=minute=0;
+            if(String.IsNullOrEmpty(key))return false;
+            var fields=key.Split('/');
+            return fields.Length==2 && Int32.TryParse(fields[0],NumberStyles.None,CultureInfo.InvariantCulture,out days) &&
+                Int32.TryParse(fields[1],NumberStyles.None,CultureInfo.InvariantCulture,out minute) &&
+                (days==EveryDay || days==MondayToFriday || days==124 || (days>0 && days<=64 && (days&(days-1))==0)) && minute>=0 && minute<1440;
+        }
+        internal static string RepeatLabel(string key)
+        {
+            int days,minute;
+            if(!RepeatParts(key,out days,out minute))return "";
+            if(days==EveryDay)return "每天";
+            if(days==MondayToFriday)return "周一至周五";
+            if(days==124)return "周二至周六";
+            for(int i=0;i<7;i++)if((days&(1<<i))!=0)return "每周"+"日一二三四五六"[i];
+            return "";
+        }
+        internal static long NextRepeat(string key,DateTime now)
+        {
+            int days,minute;
+            if(!RepeatParts(key,out days,out minute))return 0;
+            for(int offset=0;offset<=14;offset++){
+                var day=now.Date.AddDays(offset);
+                if((days&(1<<(int)day.DayOfWeek))==0)continue;
+                DateTime local=day.AddMinutes(minute);
+                if(!TimeZoneInfo.Local.IsInvalidTime(local) && local.ToUniversalTime()>now.ToUniversalTime())
+                    return local.ToUniversalTime().Ticks;
+            }
+            return 0;
+        }
+        static PaperTime ReadRepeat(string value, DateTime now)
+        {
+            var match=RepeatRule.Match(value);
+            if(!match.Success)return Ask("可写「每周五下午四点」或在小钟中选择提醒频率");
+            string before=value.Substring(0,match.Index),after=value.Substring(match.Index+match.Length);
+            if(FigurativeClock(match,before,after))
+                return Reminder.IsMatch(value) || OtherDeadline(before) || OtherDeadline(after) ? Unclear() : new PaperTime();
+            if(Repeated.IsMatch(before) || Repeated.IsMatch(after) || LimitedRepeat.IsMatch(value) || OtherDeadline(before) || OtherDeadline(after) ||
+                Vague.IsMatch(value) || UnreadCalendar.IsMatch(before) || UnreadCalendar.IsMatch(after) ||
+                BeforeAmbiguous.IsMatch(before) || AfterAmbiguous.IsMatch(after) ||
+                Regex.IsMatch(before,@"(?:只|仅|除了?|跳过|取消|不要|不用|不在|并非|不是|从)\s*$"))
+                return Ask("请确认重复提醒的日期和钟点");
+            string cycle=match.Groups["cycle"].Value,period=match.Groups["period"].Value;
+            if(cycle=="每早" || cycle=="每晚"){
+                if(period.Length>0)return Unclear();
+                period=cycle=="每晚"?"晚上":"早上";
+            }
+            TimeSpan clock;
+            if(!ClockTime(match.Groups,period,out clock))return Unclear();
+            int days=EveryDay;
+            if(match.Groups["on"].Success){
+                string digit=match.Groups["on"].Value;
+                int weekday=(digit=="日" || digit=="天")?0:Number(digit)%7;
+                days=1<<weekday;
+            } else if(cycle.Contains("工作日") || cycle.Contains("五"))days=MondayToFriday;
+            if(clock.Days>0)days=((days<<1)&127)|(days>>6);
+            string repeat=RepeatId(days,clock.Hours*60+clock.Minutes);
+            long utc=NextRepeat(repeat,now);
+            if(utc==0)return Ask("请确认重复提醒的当地时间");
+            return new PaperTime{Key="repeat:"+repeat,RepeatKey=repeat,Utc=utc};
+        }
+        static bool OtherDeadline(string fragment)
+        {
+            for(var token=Tokens.Match(fragment); token.Success; token=token.NextMatch()){
+                int start=Math.Max(0,token.Index-48), end=token.Index+token.Length;
+                string before=fragment.Substring(start,token.Index-start), after=fragment.Substring(end,Math.Min(48,fragment.Length-end));
+                if(FigurativeClock(token,before,after))continue;
+                if(!token.Groups["duration"].Success || token.Groups["after"].Success ||
+                    BeforeDuration.IsMatch(before) || AfterDuration.IsMatch(after))return true;
+            }
+            return false;
+        }
+        static bool ClockTime(GroupCollection tags,string period,out TimeSpan clock)
+        {
+            clock=TimeSpan.Zero;
             int hour = Number(tags["hour"].Value), minute = 0;
             if (tags["halfClock"].Success) minute = 30;
             if (tags["quarter"].Success) minute = 15 * Number(tags["quarter"].Value);
             if (tags["minute"].Success) minute = Number(tags["minute"].Value);
             if (tags["colon"].Success) minute = tags["colon"].Length > 2 ? -1 : Number(tags["colon"].Value);
             if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || (period.Length != 0 && hour > 12))
-                return Ask("请检查小时和分钟，例如「下午三点」或「15:30」");
+                return false;
             bool late = period == "晚上" || period == "夜里" || period == "晚";
             bool midnight = late && hour == 12;
             if (midnight || ((period == "凌晨" || period == "早上" || period == "清晨" || period == "早晨" || period == "上午" || period == "早") && hour == 12)) hour = 0;
             else if ((late || period == "下午" || period == "傍晚" || (period == "中午" && hour <= 3)) && hour < 12) hour += 12;
 
-            TimeSpan clock = new TimeSpan(midnight ? 1 : 0,hour,minute,0);
+            clock=new TimeSpan(midnight?1:0,hour,minute,0);
+            return true;
+        }
+        static PaperTime WallTime(GroupCollection tags, DateTime now)
+        {
+            string date=tags["date"].Value;
+            TimeSpan clock;
+            if(!ClockTime(tags,tags["period"].Value,out clock))return Ask("请检查小时和分钟，例如「下午三点」或「15:30」");
+            bool midnight=clock.Days>0;
+            int hour=clock.Hours,minute=clock.Minutes;
             string dayKey = date;
             DateTime due;
             if (tags["month"].Success)

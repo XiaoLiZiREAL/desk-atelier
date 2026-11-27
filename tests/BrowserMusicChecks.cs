@@ -62,6 +62,15 @@ internal static class BrowserMusicChecks
         return false;
     }
 
+    static bool UsesPose(string character,string action)
+    {
+        var poses=(Array)typeof(PetWindow).GetMethod("ActionFrames",Fields).Invoke(app.Pet,new object[]{character,action});
+        foreach(object pose in poses)if(Object.ReferenceEquals(app.Pet.LiveSprite.Source,pose))return true;
+        return false;
+    }
+    static string Motion()
+    {return typeof(PetWindow).GetField("musicMotion",Fields).GetValue(app.Pet).ToString();}
+
     static void CheckPresentation()
     {
         watcher=new MediaWatcher();
@@ -112,6 +121,29 @@ internal static class BrowserMusicChecks
         Publish(First,"qianqian-web",true,8);
         AssertEventually(()=>app.Pet.ShowingBrowserTrack && CardContains("千千音乐网页版 · "+Artist),
             "a web-only service gets its verified player label");
+        app.Data.Character="hitori";app.Pet.Sync();
+        Publish("三段小曲","netease-web",true,1);
+        AssertEventually(()=>Motion()=="Intro" && UsesPose("hitori","focus") && app.Music.CurrentLine=="",
+            "Bocchi picks the guitar during the intro with no sung words");
+        Publish("三段小曲","netease-web",true,2,live:"播放器当前歌词");
+        AssertEventually(()=>Motion()=="Singing" && app.Pet.KaraokeLyric=="播放器当前歌词","a verified live vocal survives a late-starting local lyric file");
+        Publish("三段小曲","netease-web",true,8);
+        AssertEventually(()=>Motion()=="Singing" && UsesPose("hitori","song") && app.Pet.KaraokeLyric=="第一句",
+            "the first timed line changes Bocchi to her singing poses");
+        Publish("三段小曲","netease-web",true,22);
+        AssertEventually(()=>Motion()=="Interlude" && UsesPose("hitori","focus") && app.Music.CurrentLine=="",
+            "a marked break puts her hands back on the quiet guitar phrase");
+        Publish("三段小曲","netease-web",true,22,live:"第一句");
+        AssertEventually(()=>Motion()=="Interlude" && app.Music.CurrentLine=="",
+            "a player still displaying the previous line does not sing over an explicit break");
+        Publish("三段小曲","netease-web",false,22);
+        AssertEventually(()=>!app.Pet.KaraokeMoving && !app.Pet.KaraokeVisible,"pausing a blank instrumental cue stops the performance");
+        Publish("三段小曲","netease-web",true,36);
+        AssertEventually(()=>Motion()=="Singing" && UsesPose("hitori","song") && app.Pet.KaraokeLyric=="第二句",
+            "seeking to a new lyric resumes singing at the new playhead");
+        Publish(First,"netease-web",true,4);
+        AssertEventually(()=>Motion()=="Listening" && app.Music.CurrentLine=="" && app.Pet.ShowingBrowserTrack,
+            "a metadata-only track clears the sung phrase and listens");
         app.Music.SetEnabled(false);
         AssertEventually(()=>!app.Music.Playing && !app.Pet.KaraokeVisible && !app.Pet.KaraokeMoving,
             "the listening switch clears the card and stops movement");
@@ -125,6 +157,7 @@ internal static class BrowserMusicChecks
         Environment.SetEnvironmentVariable("DESKATELIER_DATA",state);
         File.WriteAllText(Path.Combine(lyrics,Artist+" - "+Second+".lrc"),
             "[00:00.00]开始听歌\n[00:10.00]浏览器中的第二句\n[01:10.00]收尾",Encoding.UTF8);
+        File.WriteAllText(Path.Combine(lyrics,Artist+" - 三段小曲.lrc"),"[00:07.00]第一句\n[00:14.00]\n[00:34.00]第二句",Encoding.UTF8);
         try
         {
             app=new Studio(state);

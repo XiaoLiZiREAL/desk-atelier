@@ -68,9 +68,27 @@ internal static class PaperTimeChecks
         Expect("下下月一号上午八点",new DateTime(2027,1,1,8,0,0,DateTimeKind.Local));
         Expect("2月29日12:00", new DateTime(2028,2,29,12,0,0,DateTimeKind.Local));
         Expect("后年2月29号12点",new DateTime(2028,2,29,12,0,0,DateTimeKind.Local));
+        Expect("每周五下午四点交周报",Friday.Date.AddHours(16),"repeat:32/960");
+        Expect("每周五下午四点锻炼30分钟",Friday.Date.AddHours(16),"repeat:32/960");
+        Expect("每周五下午四点开会，持续30分钟",Friday.Date.AddHours(16),"repeat:32/960");
+        Expect("练琴半小时，每天下午四点",Friday.Date.AddHours(16),"repeat:127/960");
+        Expect("提醒我，每个星期五9点出门",Friday.Date.AddDays(7).AddHours(9),"repeat:32/540");
+        Expect("每周一上午九点",Friday.Date.AddDays(3).AddHours(9),"repeat:2/540");
+        Expect("每日17:05查收",Friday.Date.AddHours(17).AddMinutes(5),"repeat:127/1025");
+        Expect("每晚八点整理",Friday.Date.AddHours(20),"repeat:127/1200");
+        Expect("工作安排：每周一至周五8点出门",Friday.Date.AddDays(3).AddHours(8),"repeat:62/480");
+        Expect("每个工作日16点",Friday.Date.AddHours(16),"repeat:62/960");
+        Expect("每周五晚上十二点",Friday.Date.AddDays(1),"repeat:64/0");
+        var meeting=PaperTime.Read("每周五下午四点开会",Friday);
+        var later=Friday.AddDays(24);
+        if(PaperTime.NextRepeat(meeting.RepeatKey,later)!=Friday.Date.AddDays(28).AddHours(16).ToUniversalTime().Ticks ||
+            PaperTime.NextRepeat(meeting.RepeatKey,Friday.Date.AddHours(16))!=Friday.Date.AddDays(7).AddHours(16).ToUniversalTime().Ticks)
+            throw new Exception("Repeating notes must skip missed occurrences and advance past the exact current minute");
         foreach (string s in new[]{"今天9点去开会", "本周四15:00", "2026-01-01 07:30", "2027年2月29日早上九点",
             "2028年2月30日9:00", "13月1号上午9点", "明天25点", "今天晚上五点六十分", "10:090", "0分钟后出门",
-            "8天后出门", "周末提醒我散步", "明天下午叫我", "晚点提醒我", "一会儿后拿快递", "每周一上午九点",
+            "8天后出门", "周末提醒我散步", "明天下午叫我", "晚点提醒我", "一会儿后拿快递", "每周一交稿",
+            "每周五下午4点或5点交周报","每周五下午四点，半小时后提醒我","每周五下午四点之前提醒我","下个月开始每周五下午四点提醒我","不要每周五四点提醒我",
+            "每周五下午四点开会，持续三周","每周五下午四点开会，两周一次","每周五下午四点开会，只提醒两次",
             "每半小时提醒我", "不用提醒我明天9点出门", "不要在三点提醒我", "下午三点左右提醒我", "明天9点或者10点",
             "10分钟或半小时后提醒我", "三到四点提醒我", "周一到周五下午五点", "明天或后天下午三点",
             "9:00 到 10:00", "10分钟前提醒我", "-10分钟后", "下午三点前提醒我", "五月四日", "明天下午3点和后天6点",
@@ -81,7 +99,7 @@ internal static class PaperTimeChecks
             Reject(s);
         foreach (string s in new[]{"开会半小时", "跑步30分钟", "今天跑步用了三十分钟", "三点建议", "这个观点",
             "几点想法", "这次会议有三点要说", "第一时间", "有时间整理资料", "三点一线", "给你一点小心意", "我一点也不困",
-            "我跑过半小时", "会议超过30分钟", "提醒事项列表", "咖啡豆和牛奶", "", null})
+            "每天一点也不着急","每天三点建议","每天一点点进步","我跑过半小时", "会议超过30分钟", "提醒事项列表", "咖啡豆和牛奶", "", null})
             Ordinary(s);
         if (PaperTime.Read("今天上午九点取件；明天下午三点也去",Friday).Key != null)
             throw new Exception("Ambiguous past and future instructions inherited a past deadline key");

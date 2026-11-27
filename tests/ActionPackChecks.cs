@@ -18,7 +18,7 @@ internal static class ActionPackChecks
         {
             Entry(zip,"role/pet.json",Encoding.UTF8.GetBytes("{\"displayName\":\"动作验证\",\"spritesheetPath\":\"sheet.png\"}"));
             Entry(zip,"role/sheet.png",File.ReadAllBytes(app.Asset("steve.png")));
-            if(actions)foreach(string part in new[]{"tea","game","song","focus","rest","mine"})
+            if(actions)foreach(string part in new[]{"tea","game","song","focus","rest","mine","projectstart","projectwork","projectfinish","propbridge","turnstep"})
             {
                 string id=variant && part=="tea"?"rem":"steve";
                 string file=invalid && part=="tea"?"logo.png":"motion-"+id+"-"+part+".png";
@@ -36,15 +36,17 @@ internal static class ActionPackChecks
             string folder=Path.GetFullPath(args[0]);Directory.CreateDirectory(folder);
             Environment.SetEnvironmentVariable("DESKATELIER_DATA",folder);
             var app=new Studio(folder);app.ExtractArt();
-            if(args.Length>1 && args[1]!="--hitori")Check(app.ImportCompanion(Path.GetFullPath(args[1]))=="steve","distributed Steve pack matches the built-in rig");
-            int hitori=Array.IndexOf(args,"--hitori");
-            if(hitori>=0)Check(app.ImportCompanion(Path.GetFullPath(args[hitori+1]))=="hitori","distributed Hitori pack matches her built-in artwork");
+            if(args.Length>1 && !args[1].StartsWith("--"))Check(app.ImportCompanion(Path.GetFullPath(args[1]))=="steve","distributed Steve pack matches the built-in rig");
+            foreach(string role in new[]{"hitori","rem","kurisu"}){
+                int flag=Array.IndexOf(args,"--"+role);
+                if(flag>=0)Check(app.ImportCompanion(Path.GetFullPath(args[flag+1]))==role,"distributed "+role+" pack matches its built-in artwork");
+            }
             Check(app.ImportCompanion(Make(app,folder,"base",false,false,false))=="steve","legacy base-only Steve deduplicated");
             Check(app.ImportCompanion(Make(app,folder,"complete",true,false,false))=="steve","complete built-in actions deduplicated");
             string changed=Make(app,folder,"changed",true,true,false),id=app.ImportCompanion(changed);
             Check(id.StartsWith("custom-") && app.CustomName(id)=="动作验证","alternate action art registers a separate character");
             Check(app.ImportCompanion(changed)==id,"same alternate pack deduplicated");
-            foreach(string part in new[]{"tea","game","song","focus","rest","mine"})
+            foreach(string part in new[]{"tea","game","song","focus","rest","mine","projectstart","projectwork","projectfinish","propbridge","turnstep"})
                 Check(File.Exists(Path.Combine(folder,"companions",id,part+".png")),"installed pose strip "+part);
             bool rejected=false;
             try{app.ImportCompanion(Make(app,folder,"wrong-size",true,false,true));}catch(InvalidDataException){rejected=true;}

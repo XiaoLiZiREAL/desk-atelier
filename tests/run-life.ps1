@@ -3,7 +3,8 @@ param(
     [string]$Output=(Join-Path $PSScriptRoot '..\build\life-qa'),
     [switch]$RequireSteve,
     [switch]$ContinuationsOnly,
-    [switch]$CompileOnly
+    [switch]$CompileOnly,
+    [switch]$SimulatedMusic
 )
 $ErrorActionPreference='Stop'
 $fx=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
@@ -19,10 +20,10 @@ if([Environment]::Is64BitOperatingSystem -and ![Environment]::Is64BitProcess){$m
 foreach($name in 'System.Runtime','System.Runtime.InteropServices.WindowsRuntime','System.Collections'){$opts+="/r:$fx\$name.dll"}
 foreach($name in 'Windows.Foundation','Windows.Media','Windows.Storage'){$opts+="/r:$metadata\$name.winmd"}
 $exe=Join-Path $folder 'LifeChecks.exe'
-& "$fx\csc.exe" @opts "/out:$exe" (Join-Path $PSScriptRoot 'LifeChecks.cs') (Join-Path $PSScriptRoot 'ContinuationChecks.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
+& "$fx\csc.exe" @opts "/out:$exe" (Join-Path $PSScriptRoot 'LifeChecks.cs') (Join-Path $PSScriptRoot 'ContinuationChecks.cs') (Join-Path $PSScriptRoot 'ProjectChecks.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
 if($LASTEXITCODE){throw 'Life UI verification harness failed to compile'}
 if(!$CompileOnly){
     $steveReference=(Resolve-Path (Join-Path $PSScriptRoot '../src/assets')).Path
-    & $exe $folder $RequireSteve.IsPresent $ContinuationsOnly.IsPresent $steveReference
+    & $exe $folder $RequireSteve.IsPresent $ContinuationsOnly.IsPresent $steveReference $SimulatedMusic.IsPresent
     if($LASTEXITCODE){throw 'Life UI checks failed; see life-report.txt'}
 }

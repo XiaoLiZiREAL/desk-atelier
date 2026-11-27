@@ -69,6 +69,7 @@ namespace DeskMate
             sprite.ToolTip = "轻点打招呼 · 拖动换位置 · 右键或双击选工具";
             ToolTipService.SetInitialShowDelay(sprite, 1000);
             InstallAttachments(panel);
+            panel.Children.Add(parkedProp);
             panel.Children.Add(sprite);
 
             bubble.Background = Ui.Color("#FCFFFFFF");
@@ -93,7 +94,10 @@ namespace DeskMate
             sprite.MouseLeftButtonDown += OnPress;
             sprite.MouseMove += OnMove;
             sprite.MouseLeftButtonUp += OnRelease;
-            sprite.LostMouseCapture += delegate { pressing = dragging = false; carriedPose=null; };
+            sprite.LostMouseCapture += delegate {
+                bool moved=dragging;pressing=dragging=false;
+                if(moved)FinishDragMotion();
+            };
             sprite.MouseRightButtonUp += delegate(object sender, MouseButtonEventArgs args) {
                 pendingClickAt = 0;
                 OpenQuickMenu(true);
@@ -243,6 +247,7 @@ namespace DeskMate
                 scale = newScale;
                 sprite.Width = 152 * scale;
                 sprite.Height = sprite.Width * 208 / 192;
+                parkedProp.Width=sprite.Width;parkedProp.Height=sprite.Height;
                 Width = Math.Max(sprite.Width + 2 * AttachmentGutter(), 222);
                 Height = sprite.Height + 84;
                 bubble.MaxWidth = Width - 14;
@@ -374,12 +379,12 @@ namespace DeskMate
             if (!dragging)
             {
                 EndVisit();
-                carriedPose=independentPerformance?sprite.Source as BitmapSource:null;
+                dragging=true;
+                BeginDragMotion();
                 InterruptPerformance();
-                dragging=true;pendingClickAt=0;bubble.Visibility=Visibility.Collapsed;
+                pendingClickAt=0;bubble.Visibility=Visibility.Collapsed;
             }
-            int targetRow = dx < 0 ? Leftward : Right;
-            if (row != targetRow) { row = targetRow; shownSince = clock.ElapsedMilliseconds; }
+            UpdateDragMotion(dx);
             Position(pressWindow.X + dx, pressWindow.Y + dy);
         }
 
@@ -388,14 +393,8 @@ namespace DeskMate
             if (!pressing) return;
             bool moved = dragging;
             pressing = dragging = false;
-            carriedPose=null;
             sprite.ReleaseMouseCapture();
-            if (moved)
-            {
-                ClampCurrent();
-                RememberPosition();
-                if(!ResumePerformance(clock.ElapsedMilliseconds))SetEffect(Idle,0);
-            }
+            if (moved)FinishDragMotion();
             else pendingClickAt = clock.ElapsedMilliseconds + Forms.SystemInformation.DoubleClickTime;
             e.Handled = true;
         }
@@ -454,7 +453,8 @@ namespace DeskMate
             long now = clock.ElapsedMilliseconds;
             if(worldTick!=0 && now-worldTick>12000){ForgetPerformance();EndVisit();RefreshRoutinePace();}
             worldTick=now;
-            if(interrupted!=null && now-interrupted.InterruptedAt>MaxInterruption.TotalMilliseconds)interrupted=null;
+            if(interrupted!=null && now-interrupted.InterruptedAt>MaxInterruption.TotalMilliseconds)
+            {interrupted=null;parkedProp.Source=null;}
             if (now >= shellCheckAt && !pressing)
             {
                 shellCheckAt = now + 1450;
@@ -469,6 +469,7 @@ namespace DeskMate
             timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null ? 34 : 80);
             RefreshKaraokeOverlay();
             if (!IsVisible) { EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            if(AdvanceBridge(now))return;
             if(dragging && carriedPose!=null){ShowPose(carriedPose);return;}
             if (now >= speechUntil && bubble.Visibility == Visibility.Visible) bubble.Visibility = Visibility.Collapsed;
             if (pendingClickAt > 0 && now >= pendingClickAt)
@@ -476,13 +477,15 @@ namespace DeskMate
                 pendingClickAt = 0;
                 app.Interact("pet");
             }
-            if(visitor!=null && visitor.Independent && (app.Data.Quiet || (app.Music!=null && app.Music.Playing) ||
+            if(visitor!=null && visitor.Independent && (app.Data.Quiet || (app.Music!=null && app.Music.Playing) || (lyricPlaying && lyricLine.Length>0) ||
                 (app.FocusActive && !app.FocusPaused)))EndIndependentVisit();
-            if (visitor != null) {UpdateVisit(now);if(visitor!=null && visitor.Phase==2 && visitor.HostTea!=null)return;}
+            if (visitor != null) {UpdateVisit(now);if(visitor!=null && (visitor.Duet!=null || (visitor.Phase==2 && visitor.HostTea!=null)))return;}
             if(visitor==null && activePoses!=null && !dragging)
             {
                 if(independentPerformance && (app.Data.Quiet || MusicPlaying || ToolOpen() ||
-                    (app.FocusActive && !app.FocusPaused && performance!="focus")))InterruptPerformance();
+                    (app.FocusActive && !app.FocusPaused && performance!="focus"))){
+                    InterruptPerformance();if(AdvanceBridge(now))return;
+                }
                 else if(AdvancePerformance(now))return;
             }
             if (visitor == null && !dragging && now >= effectUntil)
@@ -575,8 +578,10 @@ namespace DeskMate
             public Window Layer;
             public IntPtr Handle;
             public Image Actor;
-            public BitmapSource[] HostTea,GuestTea;
+            public BitmapSource[] HostTea,GuestTea,GuestSteps,HostSteps;
+            public readonly Dictionary<BitmapSource,BitmapSource> Flips=new Dictionary<BitmapSource,BitmapSource>();
             public BitmapSource[][] Art;
+            public DuetScene Duet;
             public long Since;
             public bool Independent;
             public double Side;
@@ -594,23 +599,28 @@ namespace DeskMate
             NativeMonitor mon = new NativeMonitor { Size = Marshal.SizeOf(typeof(NativeMonitor)) };
             if (!GetWindowRect(handle, out r) || !GetMonitorInfo(MonitorFromWindow(handle, 2), ref mon)) return;
             double center = (r.Left + r.Right) * .5;
+            double side=center - mon.Work.Left > mon.Work.Right - center ? -1 : 1;
+            var duet=independent?PrepareDuet(side):null;
+            string guest=duet!=null?duet.Guest:character=="rem"?"kurisu":"rem";
             var scene = new VisitScene {
                 Actor = new Image { Width = sprite.Width, Height = sprite.Height, Stretch = Stretch.Fill },
-                Art = LoadArt(character == "rem" ? "kurisu" : "rem"),
-                HostTea=ActionFrames(character,"tea"),GuestTea=ActionFrames(character=="rem"?"kurisu":"rem","tea"),
+                Art = LoadArt(guest),Duet=duet,
+                GuestSteps=ActionFrames(guest,"turnstep"),HostSteps=duet!=null && character=="steve"?ActionFrames(character,"turnstep"):null,
+                HostTea=duet==null?ActionFrames(character,"tea"):null,GuestTea=duet==null?ActionFrames(guest,"tea"):null,
                 Since = clock.ElapsedMilliseconds, Independent=independent,
-                Side = center - mon.Work.Left > mon.Work.Right - center ? -1 : 1
+                Side = side
             };
             var canvas = new Canvas { IsHitTestVisible = false };
             RenderOptions.SetBitmapScalingMode(scene.Actor, BitmapScalingMode.HighQuality);
             canvas.Children.Add(scene.Actor);
+            if(duet!=null)canvas.Children.Add(duet.Prop);
             scene.Layer = new Window {
                 Width = sprite.Width * 2.8, Height = sprite.Height,
                 Background = Brushes.Transparent, Content = canvas, AllowsTransparency = true,
                 WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false,
                 ResizeMode = ResizeMode.NoResize, Topmost = Topmost, Focusable = false,
                 IsHitTestVisible = false, WindowStartupLocation = WindowStartupLocation.Manual,
-                Title = "桌边来客"
+                Title = "桌边来客",Owner=this
             };
             scene.Layer.SourceInitialized += delegate {
                 scene.Handle = new WindowInteropHelper(scene.Layer).Handle;
@@ -632,7 +642,7 @@ namespace DeskMate
             VisitScene scene = visitor;
             if (scene == null) return;
             double t = (now - scene.Since) / 1000.0;
-            if (t >= 14.3) { EndVisit(); SetEffect(Idle, 0); return; }
+            if (t >= 14.3) { CompleteVisit(scene);EndVisit(); SetEffect(Idle, 0); return; }
             NativeRect host, layer;
             NativeMonitor mon = new NativeMonitor { Size = Marshal.SizeOf(typeof(NativeMonitor)) };
             if (!GetWindowRect(handle, out host) || !GetWindowRect(scene.Handle, out layer) ||
@@ -650,6 +660,7 @@ namespace DeskMate
             double free = scene.Side < 0 ? hostCenter : windowW / pixelRatio - hostCenter;
             double far = Math.Max(0, Math.Min(sprite.Width * 1.68, free - sprite.Width * .5));
             double near = Math.Min(sprite.Width * .62, far * .82);
+            if(scene.Duet!=null){UpdateDuet(scene,t,hostCenter,near,far);return;}
             double path = t < 3 ? 1 - Smooth(t / 3) : t > 11.1 ? Smooth((t - 11.1) / 3.2) : 0;
             double guestCenter = hostCenter + scene.Side * (near + (far - near) * path);
             Canvas.SetLeft(scene.Actor, guestCenter - sprite.Width / 2);
@@ -685,7 +696,9 @@ namespace DeskMate
             int guestState = phase == 0 ? (scene.Side < 0 ? Right : Leftward) : phase == 4 ?
                 (scene.Side < 0 ? Leftward : Right) : phase == 2 ? Review : Wave;
             int frame = ((int)(t * 1000 / FrameMs[guestState])) % Counts[guestState];
-            scene.Actor.Source = scene.Art[guestState][frame];
+            scene.Actor.Source = phase==0 || phase==4
+                ?StepFrame(scene,false,phase==0?-scene.Side:scene.Side,phase==0?t:t-11.1,phase==0?3:3.2)
+                :scene.Art[guestState][frame];
             if (phase == 2)
             {
                 var score=ActionScore.For("tea");
@@ -700,6 +713,8 @@ namespace DeskMate
             if (visitor == null) return;
             var old = visitor;
             visitor = null;
+            if(old.Duet!=null && sprite.RenderTransform==old.Duet.HostStep)
+                sprite.RenderTransform=old.Duet.PreviousTransform;
             old.Layer.Close();
             ambientAt = NextAmbient();
             bubble.Visibility = Visibility.Collapsed;

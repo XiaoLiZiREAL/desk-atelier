@@ -14,6 +14,7 @@ using System.Web.Script.Serialization;
 namespace DeskMate
 {
     public enum LyricSource { None, Local, Cache, Online }
+    internal enum MusicMotion { Stopped, Listening, Intro, Singing, Interlude }
 
     public sealed class LyricFrame
     {
@@ -25,6 +26,14 @@ namespace DeskMate
         public double EndSeconds { get; internal set; }
         public double Progress { get; internal set; }
         public bool IsInstrumental { get { return Text.Length == 0; } }
+        internal bool EarlierVocal, MusicalBreak;
+        internal double VocalStart, VocalEnd = Double.PositiveInfinity;
+        internal bool HasVocalText { get { return !IsInstrumental && !MusicalBreak; } }
+        internal MusicMotion MotionAt(double position)
+        {
+            if (!HasVocalText || position < VocalStart) return EarlierVocal ? MusicMotion.Interlude : MusicMotion.Intro;
+            return position >= VocalEnd ? MusicMotion.Interlude : MusicMotion.Singing;
+        }
     }
 
     public sealed class LrcDocument
@@ -34,18 +43,30 @@ namespace DeskMate
         {
             public long Time;
             public string Text, Translation, Next;
+            public bool EarlierVocal, MusicalBreak;
+            public long FirstWord, LastWord = -1, WordEnd = -1;
         }
+        struct WordTiming { internal long Start, Last, End; }
         readonly Cue[] cues;
         internal const int MaxBytes = 512 * 1024;
         const int MaxEntries = 12000;
         static readonly Regex Stamp = new Regex(@"\[([0-9]{1,4}):([0-5]?[0-9])(?:[.:]([0-9]{1,3}))?\]",RegexOptions.CultureInvariant);
         static readonly Regex Offset = new Regex(@"\[offset\s*:\s*([+-]?[0-9]{1,8})\s*\]",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
-        static readonly Regex WordTime = new Regex(@"<\d{1,4}:[0-5]?\d(?:[.:]\d{1,3})?>", RegexOptions.CultureInvariant);
+        static readonly Regex WordTime = new Regex(@"<([0-9]{1,4}):([0-5]?[0-9])(?:[.:]([0-9]{1,3}))?>", RegexOptions.CultureInvariant);
+        static readonly Regex BreakLabel = new Regex(@"^[\s（(\[【]*(?:(?:吉他|钢琴)?(?:前奏|间奏|尾奏)|纯音乐(?:[\s,，、]*请欣赏)?|暂无(?:滚动)?歌词|伴奏|intro|interlude|instrumental|outro|[♪♫♬]+)[\s）)\]】。.!！]*$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
+        static readonly Regex Credit = new Regex(@"^(?:作[词曲]|词曲|作词人|作曲人|编曲|制作人|混音|录音|词|曲|lyrics by|composed by)\s*[:：]",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
         public int Count { get { return cues.Length; } }
         public bool HasText { get; private set; }
         LrcDocument(Cue[] lines)
         {
             cues = lines;
+            bool hasVocal = false;
+            foreach (var cue in cues)
+            {
+                cue.EarlierVocal = hasVocal;
+                cue.MusicalBreak = IsNonVocalLabel(cue.Text);
+                if (cue.Text.Length != 0 && !cue.MusicalBreak) hasVocal = true;
+            }
             string next = "";
             for (int i = cues.Length-1; i >= 0; i--)
             {
@@ -54,11 +75,23 @@ namespace DeskMate
             }
         }
 
+        static long StampMillis(Match stamp)
+        {
+            long minutes=Int64.Parse(stamp.Groups[1].Value,CultureInfo.InvariantCulture);
+            long seconds=Int64.Parse(stamp.Groups[2].Value,CultureInfo.InvariantCulture);
+            return (minutes*60+seconds)*1000+Int64.Parse(stamp.Groups[3].Value.PadRight(3,'0'),CultureInfo.InvariantCulture);
+        }
+        internal static bool IsNonVocalLabel(string text)
+        {
+            return BreakLabel.IsMatch(text) || Credit.IsMatch(text);
+        }
+
         public static LrcDocument Parse(string input)
         {
             string source = (input ?? "").TrimStart('\uFEFF');
             if (source.Length > MaxBytes) throw new InvalidDataException("歌词文件太大。");
             var groups = new SortedDictionary<long,List<string>>();
+            var wordTimes = new Dictionary<long,WordTiming>();
             int offset = 0, entries = 0;
             foreach (string original in source.Replace("\r\n","\n").Replace('\r','\n').Split('\n'))
             {
@@ -78,28 +111,46 @@ namespace DeskMate
                 int after = 0;
                 while (stamp.Success && stamp.Index == after)
                 {
-                    int minutes = Int32.Parse(stamp.Groups[1].Value,CultureInfo.InvariantCulture);
-                    int seconds = Int32.Parse(stamp.Groups[2].Value,CultureInfo.InvariantCulture);
-                    string fraction = stamp.Groups[3].Value;
-                    int millis = fraction.Length == 0 ? 0 : Int32.Parse(fraction.PadRight(3,'0'),CultureInfo.InvariantCulture);
-                    times.Add((long)minutes * 60000 + seconds * 1000 + millis);
+                    times.Add(StampMillis(stamp));
                     after = stamp.Index + stamp.Length;
                     while (after < line.Length && Char.IsWhiteSpace(line[after])) after++;
                     if (after >= line.Length || line[after] != '[') break;
                     stamp = Stamp.Match(line, after);
                 }
-                string text = WordTime.Replace(line.Substring(after),"").Trim();
+                string raw = line.Substring(after).Trim();
+                string text = WordTime.Replace(raw,"").Trim();
+                var words = WordTime.Matches(raw);
+                long firstWord = 0, lastWord = -1;
+                bool endsHere = false;
+                if (words.Count > 0)
+                {
+                    Match head=words[0], tail=words[words.Count-1];
+                    long absolute=StampMillis(tail);
+                    if (absolute >= times[0])
+                    {
+                        lastWord=absolute-times[0];
+                        if (head.Index==0) firstWord=Math.Min(lastWord,Math.Max(0,StampMillis(head)-times[0]));
+                        endsHere=tail.Index+tail.Length==raw.Length;
+                    }
+                }
                 foreach (long time in times)
                 {
                     if (++entries > MaxEntries) throw new InvalidDataException("歌词时间点过多。");
                     List<string> lines;
                     if (!groups.TryGetValue(time, out lines)) groups.Add(time, lines = new List<string>());
+                    if (lines.Count==0 && text.Length>0 && lastWord>=0)
+                        wordTimes[time]=new WordTiming {Start=time+firstWord,Last=time+lastWord,End=endsHere?time+lastWord:-1};
                     if (text.Length != 0 && !lines.Contains(text)) lines.Add(text);
                 }
             }
-            return new LrcDocument(groups.Select(pair => new Cue {
-                Time = pair.Key - offset, Text = pair.Value.FirstOrDefault() ?? "",
-                Translation = String.Join(" / ",pair.Value.Skip(1))
+            return new LrcDocument(groups.Select(pair => {
+                WordTiming word;
+                bool timed=wordTimes.TryGetValue(pair.Key,out word);
+                return new Cue { Time = pair.Key-offset, Text = pair.Value.FirstOrDefault() ?? "",
+                    Translation = String.Join(" / ",pair.Value.Skip(1)),
+                    FirstWord = (timed?word.Start:pair.Key)-offset,
+                    LastWord = timed ? word.Last-offset : -1,
+                    WordEnd = timed && word.End>=0 ? word.End-offset : -1 };
             }).ToArray());
         }
 
@@ -153,7 +204,7 @@ namespace DeskMate
             }
             int idx=left-1;
             if (known && position>=durationSeconds)
-                return new LyricFrame {Index=cues.Length,Text="",Translation="",NextText="",StartSeconds=durationSeconds,EndSeconds=durationSeconds,Progress=1};
+                return new LyricFrame {Index=cues.Length,Text="",Translation="",NextText="",StartSeconds=durationSeconds,EndSeconds=durationSeconds,Progress=1,EarlierVocal=true};
             if (idx<0)
             {
                 double end=cues.Length==0 ? (known?durationSeconds:Double.PositiveInfinity) : Math.Max(0,cues[0].Time/1000.0);
@@ -165,7 +216,18 @@ namespace DeskMate
             double start = Math.Max(0,active.Time/1000.0);
             double finish = idx+1<cues.Length ? cues[idx+1].Time/1000.0 : Double.PositiveInfinity;
             if (known) finish=Math.Min(finish,durationSeconds);
+            double vocalEnd=finish;
+            if (active.WordEnd>=0) vocalEnd=Math.Min(finish,active.WordEnd/1000.0);
+            else if (!Double.IsInfinity(finish) && finish-start>=12)
+            {
+                // Line-only LRC has no release time. Retain its text while resting the
+                // performance during a long interval. Never rest ahead of a timed word.
+                double phrase=Math.Min(14,Math.Max(5,2.5+active.Text.Length*.45));
+                double restAfter=Math.Max(start+phrase,active.LastWord/1000.0+2.5);
+                if (finish-restAfter>=3) vocalEnd=restAfter;
+            }
             return new LyricFrame {Index=idx,Text=active.Text,Translation=active.Translation,NextText=active.Next,StartSeconds=start,EndSeconds=finish,
+                EarlierVocal=active.EarlierVocal,MusicalBreak=active.MusicalBreak,VocalStart=active.FirstWord/1000.0,VocalEnd=vocalEnd,
                 Progress=finish>start&&!Double.IsInfinity(finish)?Math.Min(1,Math.Max(0,(position-start)/(finish-start))):0};
         }
     }

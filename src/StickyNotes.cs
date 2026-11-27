@@ -114,7 +114,7 @@ namespace DeskMate
             stickySurface.Children.Add(fold);
             paperGrip=MakePaperGrip();stickySurface.Children.Add(paperGrip);
 
-            var writing=new Grid{Margin=new Thickness(20,45,19,38)};
+            writing=new Grid{Margin=new Thickness(20,45,19,38)};
             var textHost=new FrameworkElementFactory(typeof(ScrollViewer),"PART_ContentHost");
             textHost.SetValue(Control.BackgroundProperty,Brushes.Transparent);
             textHost.SetValue(UIElement.FocusableProperty,false);
@@ -139,10 +139,11 @@ namespace DeskMate
                 if(text!=null && !FitsSticky(text)){e.Effects=DragDropEffects.None;e.Handled=true;}
             };
             writing.Children.Add(stickyEditor);
-            stickyHint=Ui.Text("写下便签…",16,Ui.Muted);
+            stickyHint=Ui.Text("写下便签，或拖入文件…",16,Ui.Muted);
             stickyHint.VerticalAlignment=VerticalAlignment.Top;stickyHint.Margin=new Thickness(2,2,0,0);
             stickyHint.Opacity=.8;stickyHint.IsHitTestVisible=false;writing.Children.Add(stickyHint);
             stickySurface.Children.Add(writing);
+            InstallPaperFiles();
 
             var foot=new Grid{Height=30,Margin=new Thickness(19,0,8,6),VerticalAlignment=VerticalAlignment.Bottom};
             foot.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
@@ -240,7 +241,7 @@ namespace DeskMate
                 finally{loadingSticky=false;}
                 UpdateStickyDetails();return;
             }
-            if(String.IsNullOrWhiteSpace(value)){
+            if(String.IsNullOrWhiteSpace(value) && (stickyNote==null || stickyNote.AttachmentPaths.Count==0)){
                 if(index>=0){stickySlot=index;notes.RemoveAt(index);}
                 if(stickyNote!=null)stickyNote.Text=value;
             }else{
@@ -260,6 +261,7 @@ namespace DeskMate
         void SelectSticky(int index,bool turn)
         {
             ClosePaperTimePicker();
+            shownAttachment=0;
             var notes=app.Data.Notes;
             stickySlot=Math.Max(0,Math.Min(index,notes.Count));
             stickyNote=stickySlot<notes.Count?notes[stickySlot]:null;
@@ -288,18 +290,23 @@ namespace DeskMate
             stickyClock.IsEnabled=index>=0;
             paperGrip.IsEnabled=index>=0;
             stickyUndo.Visibility=deletedNote!=null && notes.Count<StickyCapacity?Visibility.Visible:Visibility.Collapsed;
+            RefreshPaperFiles(index>=0?stickyNote:null);
             stickyStatus.Text="";
             if(stickyEditor.IsReadOnly)stickyStatus.Text="便签已满";
             else if(index>=0 && stickyNote.DueUtc>0){
                 DateTime due=new DateTime(stickyNote.DueUtc,DateTimeKind.Utc).ToLocalTime();
-                stickyStatus.Text=(stickyNote.Done?"已完成":stickyNote.Notified?"已提醒":"提醒")+" · "+due.ToString("M/d HH:mm");
+                string cycle=PaperTime.RepeatLabel(stickyNote.PaperRepeatKey);
+                stickyStatus.Text=(stickyNote.Done?"已完成":stickyNote.Notified?"已提醒":cycle.Length>0?cycle:"提醒")+" · "+due.ToString("M/d HH:mm");
             }
             else if(index>=0 && stickyNote.Done)stickyStatus.Text="已完成";
             else if(index>=0){
                 var time=PaperTime.Read(stickyNote.Text,DateTime.Now);
                 if(stickyNote.PaperTimeKey!=Studio.ChosenPaperTime && time.Error!=null)stickyStatus.Text="时间待确认";
                 else if(stickyNote.HeldByPet)stickyStatus.Text="伙伴已收好";
-                else if(time.Utc>0)stickyStatus.Text="递出后提醒 · "+new DateTime(time.Utc,DateTimeKind.Utc).ToLocalTime().ToString("M/d HH:mm");
+                else if(time.Utc>0){
+                    string cycle=PaperTime.RepeatLabel(time.RepeatKey);
+                    stickyStatus.Text=(cycle.Length>0?cycle:"递出后提醒")+" · "+new DateTime(time.Utc,DateTimeKind.Utc).ToLocalTime().ToString("M/d HH:mm");
+                }
             }
             stickyStatus.ToolTip=stickyStatus.Text;
             bool pinned=app.Data.StickyPinned;

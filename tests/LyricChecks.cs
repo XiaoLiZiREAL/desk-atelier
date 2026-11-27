@@ -57,6 +57,20 @@ internal static class LyricChecks
         Check(last.Index==3&&Near(last.EndSeconds,12)&&last.Progress>0&&last.Progress<1,"last segment duration and fraction use media length");
         Check(timeline.At(12,12).IsInstrumental&&timeline.At(12,12).Text=="","known track end clears final lyric");
         Check(timeline.At(1,12).Index==0,"seeking backward re-evaluates via binary search");
+        var phrases=LrcDocument.Parse("[00:06.00]作词：甲\n[00:09.00]<00:09.00>第一句<00:13.50>\n[00:27.00]第二句\n[00:51.00]（间奏）\n[01:01.00]尾声");
+        Check(phrases.At(1,75).MotionAt(1)==MusicMotion.Intro && phrases.At(7,75).MotionAt(7)==MusicMotion.Intro,"opening silence and credits use the intro gesture");
+        Check(phrases.At(13.4,75).MotionAt(13.4)==MusicMotion.Singing && phrases.At(13.5,75).MotionAt(13.5)==MusicMotion.Interlude,"enhanced LRC ends the vocal gesture at the final word boundary");
+        Check(phrases.At(27,75).MotionAt(27)==MusicMotion.Singing && phrases.At(40,75).MotionAt(40)==MusicMotion.Interlude && phrases.At(40,75).Text=="第二句","line-only LRC retains the caption during a long breathing pause");
+        Check(phrases.At(52,75).MotionAt(52)==MusicMotion.Interlude && phrases.At(62,75).MotionAt(62)==MusicMotion.Singing,"instrumental marker listens and the next lyric resumes singing");
+        var held=LrcDocument.Parse("[00:01]长<00:19>句\n[00:27]新句");
+        Check(LrcDocument.IsNonVocalLabel("纯音乐，请欣赏。") && LrcDocument.IsNonVocalLabel("（吉他间奏）") &&
+            LrcDocument.IsNonVocalLabel("暂无滚动歌词") && !LrcDocument.IsNonVocalLabel("这是我们的前奏"),
+            "instrumental placeholders in Chinese players are not sung as words");
+        var delayed=LrcDocument.Parse("[00:01]<00:06>第一句<00:08>\n[00:15]<00:19>第二句");
+        Check(delayed.At(3,25).MotionAt(3)==MusicMotion.Intro && delayed.At(6,25).MotionAt(6)==MusicMotion.Singing &&
+            delayed.At(8,25).MotionAt(8)==MusicMotion.Interlude && delayed.At(17,25).MotionAt(17)==MusicMotion.Interlude,
+            "a preloaded caption waits for the first timestamped word in each phrase");
+        Check(held.At(19,40).MotionAt(19)==MusicMotion.Singing,"an explicit late word prevents an early rest");
         var negative=LrcDocument.Parse("[00:10:25]十点一刻\n[offset:-500]");
         Check(negative.At(10.74).IsInstrumental&&negative.At(10.75).Text=="十点一刻","negative offset and colon fractions supported");
         var cut=LrcDocument.Parse("[00:00.2]甲\n[00:00.5]乙\n[offset:+500]");

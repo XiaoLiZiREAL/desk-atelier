@@ -39,6 +39,21 @@ namespace DeskMate
             AutomationProperties.SetAutomationId(time,"PaperClock");AutomationProperties.SetName(time,"提醒时间，24 小时制");
             date.ToolTip="年-月-日";time.ToolTip="小时:分钟";
             pair.Children.Add(date);pair.Children.Add(time);body.Children.Add(pair);
+            var frequency=new WrapPanel{Margin=new Thickness(0,0,0,8)};
+            string originalRepeat=note.PaperTimeKey==Studio.ChosenPaperTime || note.HeldByPet?note.PaperRepeatKey:parsed.RepeatKey;
+            string cycle=PaperTime.RepeatLabel(originalRepeat);
+            int initialMode=cycle=="每天"?1:cycle.StartsWith("每周")?2:cycle=="周一至周五"?3:cycle=="周二至周六"?4:0;
+            int mode=initialMode;
+            string[] options={"一次","每天","每周","周一至五","周二至六"};
+            for(int index=0;index<(initialMode==4?5:4);index++){
+                int choice=index;
+                var option=new RadioButton{Content=options[index],IsChecked=index==initialMode,FontSize=11,
+                    Margin=new Thickness(0,1,7,2),VerticalContentAlignment=VerticalAlignment.Center};
+                AutomationProperties.SetAutomationId(option,"PaperRepeat"+index);
+                option.ToolTip=index==2?"每周在所选日期对应的星期提醒":options[index];
+                option.Checked+=delegate{mode=choice;};frequency.Children.Add(option);
+            }
+            body.Children.Add(frequency);
             Action confirm=delegate{
                 DateTime chosen;
                 string input=date.Text.Trim()+" "+time.Text.Trim().Replace('：',':');
@@ -49,8 +64,18 @@ namespace DeskMate
                 if(!valid || chosen<=DateTime.Now || TimeZoneInfo.Local.IsInvalidTime(chosen)){
                     heading.Text="请输入有效的未来日期和时间";return;
                 }
+                int weekday=1<<(int)chosen.DayOfWeek,days=0;
+                switch(mode){
+                    case 1: days=PaperTime.EveryDay;break;
+                    case 2: days=weekday;break;
+                    case 3: days=PaperTime.MondayToFriday;break;
+                    case 4: days=124;break;
+                }
+                bool sameOccurrence=mode==initialMode && ticks==note.DueUtc && ticks>0 && chosen.ToUniversalTime().Ticks==ticks;
+                if(!sameOccurrence && days!=0 && (days&weekday)==0){heading.Text="起始日期须在所选星期范围内";return;}
                 ClosePaperTimePicker();
-                app.GivePaperWithTime(note,stickyTone,DateTime.SpecifyKind(chosen,DateTimeKind.Local));
+                app.GivePaperWithTime(note,stickyTone,DateTime.SpecifyKind(chosen,DateTimeKind.Local),
+                    sameOccurrence?originalRepeat:days==0?null:PaperTime.RepeatId(days,chosen.Hour*60+chosen.Minute));
             };
             var actions=new StackPanel{Orientation=Orientation.Horizontal};
             actions.Children.Add(TimeAction("ConfirmPaperTime","定时递回",confirm));

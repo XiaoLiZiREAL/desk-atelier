@@ -50,6 +50,42 @@ internal static partial class LifeChecks
     static void ResetPose(){typeof(PetWindow).GetMethod("FinishPerformance",Fields).Invoke(pet,null);}
     static void NoTools(){Need(!app.Windows.OfType<Window>().Any(w=>w.IsVisible&&w!=pet),"only the pet is visible; workbench and game windows stay closed");}
 
+    static MediaWatcher simulatedWatcher;
+
+    static void EnableSimulatedMusic()
+    {
+        simulatedWatcher=new MediaWatcher();
+        // Keep the normal listening-room timer and presentation logic, replacing only the OS observation.
+        typeof(MediaWatcher).GetField("next",Fields).SetValue(simulatedWatcher,Int64.MaxValue);
+        typeof(ListeningRoom).GetField("watcher",Fields).SetValue(app.Music,simulatedWatcher);
+        app.Data.SingAlongEnabled=true;
+        var timer=(DispatcherTimer)typeof(ListeningRoom).GetField("timer",Fields).GetValue(app.Music);
+        timer.Interval=TimeSpan.FromMilliseconds(200);
+        timer.Start();
+    }
+
+    sealed class SimulatedSong : IDisposable
+    {
+        readonly FieldInfo latest=typeof(MediaWatcher).GetField("latest",Fields);
+        readonly MediaReading before=simulatedWatcher.Latest;
+
+        public SimulatedSong(string title,string artist)
+        {
+            var constructor=typeof(MediaReading).GetConstructors(BindingFlags.Instance|BindingFlags.NonPublic).Single();
+            var reading=constructor.Invoke(new object[]{title,artist,"chrome","smtc","browser",TimeSpan.Zero,
+                TimeSpan.FromMinutes(2),true,true,true,DateTime.UtcNow,1d,"","","",""});
+            latest.SetValue(simulatedWatcher,reading);
+        }
+
+        public void Dispose(){latest.SetValue(simulatedWatcher,before);}
+    }
+
+    static IDisposable PlayTestSong(string title)
+    {
+        if(simulatedWatcher!=null)return new SimulatedSong(title,"桌宠测试");
+        return new NativeTestSong(state,title,"桌宠测试");
+    }
+
     static void CapturePet(string name)
     {
         if(!pet.IsVisible || PresentationSource.FromVisual(pet)==null)throw new InvalidOperationException("Pet window is not visible");
@@ -189,17 +225,22 @@ internal static partial class LifeChecks
         ResetPose();DueSoon();Pump(350);Need(pet.CurrentActivity=="focus"&&!pet.OfferingGame,"focus allows work gestures without new invitations");
         app.CancelFocus();ResetPose();
         app.Data.MaidRoutine=1;GetGame();
-        using(var song=new NativeTestSong(state,"邀请测试","桌宠测试"))
+        using(var song=PlayTestSong("邀请测试"))
         {
-            Until(()=>app.Music.Title=="邀请测试"&&app.Music.Playing&&!pet.OfferingGame,9500,"native playback interrupts an invitation");
+            Until(()=>app.Music.Title=="邀请测试"&&app.Music.Playing&&!pet.OfferingGame,9500,"detected playback interrupts an invitation");
             DueSoon();Pump(350);Need(!pet.OfferingGame&&pet.CurrentActivity!="game","music suppresses additional game invitations");
         }
         Until(()=>!app.Music.Playing,9500,"music detection stops after playback closes");ResetPose();
-        app.Data.MaidRoutine=1;GetGame();var cursor=new NativePoint();GetCursorPos(out cursor);
+        app.Data.MaidRoutine=1;GetGame();NativePoint cursor;
         NativeRect pr;GetWindowRect(petHandle,out pr);
-        SetPoint("pressPoint",cursor.X-8,cursor.Y);SetPoint("pressWindow",pr.Left,pr.Top);Put("pressing",true);
-        pet.LiveSprite.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice,Environment.TickCount){RoutedEvent=Mouse.MouseMoveEvent});
-        Need(!pet.OfferingGame&&pet.CurrentActivity!="game","real mouse-move handler cancels invitation on drag without moving system pointer");
+        SetPoint("pressWindow",pr.Left,pr.Top);Put("pressing",true);
+        if(GetCursorPos(out cursor))
+        {
+            SetPoint("pressPoint",cursor.X-8,cursor.Y);
+            pet.LiveSprite.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice,Environment.TickCount){RoutedEvent=Mouse.MouseMoveEvent});
+        }
+        else PetCall("UpdateDrag",8,0);
+        Need(Read<bool>("dragging")&&!pet.OfferingGame&&pet.CurrentActivity!="game","dragging interrupts an invitation without moving the system pointer");
         Put("pressing",false);Put("dragging",false);SetWindowPos(petHandle,IntPtr.Zero,pr.Left,pr.Top,0,0,0x1|0x4|0x10);
         app.Data.MaidRoutine=1;GetGame();app.Data.Character="kurisu";pet.Sync();Need(!pet.OfferingGame&&pet.CurrentActivity!="game","switching character cancels the old action");
         DueSoon();Until(()=>pet.CurrentActivity=="focus",2000,"Kurisu starts her own notebook routine");
@@ -225,7 +266,7 @@ internal static partial class LifeChecks
         ScheduleVisit();app.Open("focus");GuestGone("opening an explicit tool");app.Desk.Hide();Pump(100);
         ScheduleVisit();app.StartFocus(2);GuestGone("active focus");app.CancelFocus();ResetPose();
         ScheduleVisit();
-        using(var song=new NativeTestSong(state,"来访测试","桌宠测试"))
+        using(var song=PlayTestSong("来访测试"))
         {
             Until(()=>app.Music.Title=="来访测试"&&app.Music.Playing,9500,"autonomous listener detected visit test music");
             GuestGone("playing music");
@@ -263,9 +304,17 @@ internal static partial class LifeChecks
         {
             Say("Executable SHA256 "+Hash(File.ReadAllBytes(typeof(Studio).Assembly.Location)));
             bool continuationsOnly=args.Length>2 && String.Equals(args[2],"True",StringComparison.OrdinalIgnoreCase);
+            bool simulateMusic=args.Length>4 && String.Equals(args[4],"True",StringComparison.OrdinalIgnoreCase);
             app=new Studio(state);
             if(continuationsOnly){app.Data.SingAlongEnabled=false;app.Data.HideFullscreen=false;app.Data.PetWelcomeSeen=true;}
-            app.StartStudio(null);pet=app.Pet;petHandle=new WindowInteropHelper(pet).Handle;Pump(150);
+            if(simulateMusic){app.Data.SingAlongEnabled=false;app.Data.LyricFolder=state;}
+            app.StartStudio(null);pet=app.Pet;petHandle=new WindowInteropHelper(pet).Handle;
+            if(!continuationsOnly)
+            {
+                Say(simulateMusic?"Music input: simulated media-watcher snapshots":"Music input: native Windows media session");
+                if(simulateMusic)EnableSimulatedMusic();
+            }
+            Pump(150);
             if(continuationsOnly){CheckContinuations();Say("ALL CONTINUATION CHECKS PASSED");ok=true;return 0;}
             Need(pet.IsVisible&&!app.Desk.IsVisible && app.Windows.OfType<Window>().Count(w=>w.IsVisible)==1,"default first launch shows only the desktop pet");
             ObserveFirstTea();ObserveGames();Blockers();VisitAndNotes();CheckArt("rem",false);CheckArt("kurisu",false);

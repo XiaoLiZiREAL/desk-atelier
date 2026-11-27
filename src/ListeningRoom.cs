@@ -174,15 +174,39 @@ namespace DeskMate
             {
                 double offset = Math.Max(-10000, Math.Min(10000, app.Data.LyricOffsetMs)) / 1000d;
                 var position = reading.PositionAt(DateTime.UtcNow).TotalSeconds;
-                var frame = lyrics.Document.At(Math.Max(0, position + offset), reading.Duration.TotalSeconds);
+                double at = Math.Max(0, position + offset);
+                var frame = lyrics.Document.At(at, reading.Duration.TotalSeconds);
+                // A player can publish the actual words even when the local file starts late.
+                if(frame.Index<0 && live && !LrcDocument.IsNonVocalLabel(reading.LiveLyric)){
+                    Paint(reading.LiveLyric,"",0,Playing);return;
+                }
                 if (!String.IsNullOrWhiteSpace(frame.Text))
                 {
-                    Paint(frame.Text, frame.Translation.Length > 0 ? frame.Translation : frame.NextText,
-                          frame.Progress, Playing && !frame.IsInstrumental);
+                    CurrentLine=frame.Text;
+                    MusicMotion motion=frame.MotionAt(at);
+                    double phaseStart=at<frame.VocalStart?frame.StartSeconds:
+                        frame.HasVocalText && at>=frame.VocalEnd?frame.VocalEnd:frame.VocalStart;
+                    app.Pet.SetLyricMotion(frame.Text,frame.Translation.Length>0?frame.Translation:frame.NextText,
+                        frame.Progress,Playing?motion:MusicMotion.Stopped,Math.Max(0,at-phaseStart));
+                    overlayFilled=true;
                     return;
                 }
+                if(Playing){
+                    CurrentLine="";
+                    app.Pet.ShowTrack(reading,frame.MotionAt(at));
+                    overlayFilled=true;
+                    return;
+                }
+                Paint("","",0,false);
+                return;
             }
-            if (live) Paint(reading.LiveLyric, "", 0, !reading.StateKnown || Playing);
+            if (live && LrcDocument.IsNonVocalLabel(reading.LiveLyric))
+            {
+                CurrentLine=reading.LiveLyric;
+                app.Pet.SetLyricMotion(CurrentLine,"",0,reading.StateKnown && !Playing?MusicMotion.Stopped:MusicMotion.Interlude,-1);
+                overlayFilled=true;
+            }
+            else if (live) Paint(reading.LiveLyric, "", 0, !reading.StateKnown || Playing);
             else if (Playing && (reading.PlayerKey == "browser" || ChinesePlayers.IsSupportedPlayer(reading.PlayerKey)))
             {
                 CurrentLine = "";

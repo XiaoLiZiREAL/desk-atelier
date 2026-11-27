@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from math import cos, pi, sin
 
 COUNTS = (6, 8, 8, 4, 5, 8, 6, 6, 6, 8, 8)
-ACTIONS = ("tea","game","song","focus","rest","mine","fish","fishcatch","pillar","handoff","returnnote","bowdraw","blockguard")
+ACTIONS = ("tea","game","song","focus","rest","mine","fish","fishcatch","pillar","handoff","returnnote","bowdraw","blockguard",
+           "projectstart","projectwork","projectfinish","propbridge","turnstep","toolbridge")
 
 @dataclass
 class Frame:
@@ -29,7 +30,35 @@ class Frame:
 
 def action(name,i):
     f=Frame(i*7+1,scene=name,step=i)
-    if name in ("fish","fishcatch"):
+    if name in ("projectstart","projectwork","projectfinish"):
+        f.x=5
+        f.yaw=(-8,-16,-22,-25,-16,-5)[i]
+        f.turn=(-5,-9,-15,-14,-10,-4)[i]
+        f.pitch=(16,27,42,48,32,19)[i]
+        f.sneak=i in (2,3,4)
+        if name=="projectstart":
+            f.item=("iron_hoe","iron_hoe","iron_hoe","seeds_wheat","seeds_wheat","")[i]
+            f.swing=(0,.19,.51,.18,.6,0)[i]
+        elif name=="projectwork":
+            f.item=("","iron_hoe","iron_hoe","","","")[i]
+            f.swing=(0,0,.43,0,.25,0)[i]
+        else:
+            f.item=("","", "wheat","wheat","seeds_wheat","seeds_wheat")[i]
+            f.swing=(.18,.61,0,0,.46,0)[i]
+    elif name in ("propbridge","toolbridge"):
+        prop="potion_bottle_drinkable" if name=="propbridge" else "iron_pickaxe"
+        f.item=prop if i<4 else ""
+        f.x=3 if name=="toolbridge" else 0
+        f.pitch=(-9,2,12,33,46,21)[i]
+        f.yaw=(-8,-3,-13,-20,-23,-14)[i]
+        f.sneak=i in (3,4)
+        f.swing=(0,0,.08,.17,.38,0)[i]
+    elif name=="turnstep":
+        f.turn=(0,25,49,70,65,37)[i]
+        f.stride=(0,.3,1.3,2.9,4.4,5.1)[i]
+        f.amount=(0,.12,.42,.8,.39,.035)[i]
+        f.yaw=(4,18,11,3,-5,-14)[i]
+    elif name in ("fish","fishcatch"):
         f.x=3
         f.item=("fishing_rod_uncast","fishing_rod_cast","fishing_rod_cast",
                 "fishing_rod_cast","fishing_rod_uncast","fish_cod_raw" if name=="fishcatch" else "leather_boots")[i]

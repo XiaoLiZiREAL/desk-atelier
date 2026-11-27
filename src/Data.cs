@@ -18,6 +18,12 @@ namespace DeskMate
         public int PaperTone = -1;
         public string PaperTimeKey;
         public string WrittenTimeAtChoice;
+        public string PaperRepeatKey;
+        public List<string> AttachmentPaths = new List<string>();
+        public bool ShouldSerializeAttachmentPaths() { return AttachmentPaths.Count>0; }
+        internal bool HasContent { get { return !String.IsNullOrWhiteSpace(Text) || AttachmentPaths.Count>0; } }
+        internal string Preview { get { return !String.IsNullOrWhiteSpace(Text)?Text:
+            AttachmentPaths.Count>0?Path.GetFileName(AttachmentPaths[0]):""; } }
     }
 
     public class BagItem
@@ -129,9 +135,13 @@ namespace DeskMate
             data.LastGift = data.LastGift ?? "";
             data.MusicPath = data.MusicPath ?? "";
             if (data.Notes == null) data.Notes = new List<NoteItem>();
-            data.Notes.RemoveAll(n => n == null || String.IsNullOrWhiteSpace(n.Text));
-            foreach (NoteItem note in data.Notes)
+            foreach (NoteItem note in data.Notes.Where(n=>n!=null))
+            {
+                if(note.AttachmentPaths==null)note.AttachmentPaths=new List<string>();
+                note.AttachmentPaths.RemoveAll(p => String.IsNullOrWhiteSpace(p) || p.IndexOfAny(Path.GetInvalidPathChars())>=0 || !Path.IsPathRooted(p));
                 if (note.DueUtc < 0 || note.DueUtc > DateTime.MaxValue.Ticks) note.DueUtc = 0;
+            }
+            data.Notes.RemoveAll(n => n == null || !n.HasContent);
             if (data.Bag == null) data.Bag = new List<BagItem>();
             data.Bag.RemoveAll(b => b == null || String.IsNullOrWhiteSpace(b.Target));
             foreach (BagItem item in data.Bag)
@@ -283,7 +293,7 @@ namespace DeskMate
             if (finished) messages.Add(Data.FocusCount == 3 ? "专注完成！收音机组装好了，去房间听听吧。" : "完成了 " + Data.PlannedMinutes + " 分钟专注，起来活动一下吧。");
             if (due.Count > 0)
                 messages.Add((due.Count == 1 ? "便签提醒 · " : due.Count + " 项便签到期 · ") +
-                    String.Join("、", due.Take(2).Select(n => ReminderPreview(n.Text))) +
+                    String.Join("、", due.Take(2).Select(n => ReminderPreview(n.Preview))) +
                     (due.Count > 2 ? " 等" : ""));
             Notify(String.Join("　", messages));
             RefreshReturnedPaper();

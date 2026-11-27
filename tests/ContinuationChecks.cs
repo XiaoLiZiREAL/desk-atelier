@@ -54,7 +54,8 @@ internal static partial class LifeChecks
         }
         else PetCall("UpdateDrag",8,0); // A noninteractive test desktop cannot read the physical cursor.
         Pump(220);
-        Need(Read<bool>("dragging") && Object.ReferenceEquals(cup,pet.LiveSprite.Source),"carrying a busy pet keeps its current prop in its hands");
+        Need(Read<bool>("dragging") && Object.ReferenceEquals(Poses("rem","propbridge")[2],pet.LiveSprite.Source),
+            "dragging a pet while she drinks switches to the drawn two-handed grip on her cup");
         pet.LiveSprite.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=UIElement.MouseLeftButtonUpEvent});
         SetWindowPos(petHandle,IntPtr.Zero,bounds.Left,bounds.Top,0,0,0x1|0x4|0x10);
         Until(()=>pet.CurrentActivity=="tea",1000,"dropping the pet at a new location resumes its interrupted tea");
@@ -112,6 +113,7 @@ internal static partial class LifeChecks
         Until(()=>pet.CurrentActivity=="fold" && pet.KaraokeVisible && !pet.KaraokeMoving,1200,
             "a visible paused caption allows the next scheduled activity to start from idle");
         pet.ClearKaraoke();
+        CheckProjectsAndTransitions();
     }
     static void VerifyNewRoutines(string id,string[] actions)
     {

@@ -218,6 +218,26 @@ def item_displays():
 
 def environment(renderer,frame):
     step=frame.step
+    if frame.scene in ('propbridge','toolbridge') and step>=4:
+        name='iron_pickaxe' if frame.scene=='toolbridge' else 'potion_bottle_drinkable'
+        # A dropped inventory item uses the same texels as its hand-held counterpart.
+        # For one beat it travels down from the right hand before resting on the ground.
+        mat=tr(-9 if step==4 else -12,6 if step==4 else 2.6,5)@ry(-13)@rx(-64)@rz(-28)
+        for x,y,width,color in item_rows(name):
+            renderer.box(mat@tr(x*.46,y*.46,0),(width*.46,.46,.36),color)
+    if frame.scene.startswith("project"):
+        soil=cube_texture('dirt')
+        if frame.scene!='projectstart' or step>=2:
+            soil['top']=texture('farmland_dry' if frame.scene=='projectstart' else 'farmland_wet')
+        plot=tr(-10,0,3)
+        renderer.box(plot,(13,3,13),soil)
+        stages={'projectstart':(-1,-1,-1,-1,0,0),'projectwork':(0,0,0,3,3,3),
+                'projectfinish':(7,7,-1,-1,0,0)}
+        stage=stages[frame.scene][step]
+        if stage>=0:
+            leaves=cube_texture('wheat_stage_'+str(stage))
+            for angle in (45,-45):
+                renderer.box(plot@tr(0,8,0)@ry(angle),(13,13,.12),leaves)
     if frame.scene=='pillar':
         count=(0,1,2,2,1,0)[step]
         for layer in range(count):
@@ -241,7 +261,9 @@ def cracked(name):
 
 def render(key,frame):
     camera=(5.15,3.66,2.85,2.85,3.68,5.15)[frame.step] if frame.scene=='pillar' else SCALE
-    renderer=Renderer(4.45,189) if frame.scene=='mine' else Renderer(camera)
+    renderer=Renderer(4.45,189) if frame.scene in ('mine','toolbridge') else Renderer(camera)
+    if frame.scene.startswith("project"):
+        renderer=Renderer(4.45,181)
     transforms=part_matrices(key,frame)
     for part,pivot,center,size in zip(PARTS,transforms,CENTRES,SIZES):
         renderer.box(pivot@tr(*center),size,pose_skin(part))

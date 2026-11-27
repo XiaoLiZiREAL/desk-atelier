@@ -256,7 +256,7 @@ namespace DeskMate
             if(due>0 && quick.Success)text=quick.Groups[1].Value.Trim();
             string noteIssue=AddNote(text,due);
             if(noteIssue==null && due>0 && !quick.Success){
-                var note=app.Data.Notes[0];note.HeldByPet=true;note.PaperTimeKey=schedule.Key;
+                var note=app.Data.Notes[0];note.HeldByPet=true;note.PaperTimeKey=schedule.Key;note.PaperRepeatKey=schedule.RepeatKey;
             }
             string receipt=due>0?"记好了，"+new DateTime(due,DateTimeKind.Utc).ToLocalTime().ToString("M/d HH:mm")+" 提醒你。":
                 schedule.Error!=null?"便签已保存，点纸上的小钟确认提醒时间。":"已记进便签册。";
@@ -333,15 +333,22 @@ namespace DeskMate
                 }
                 else if (!Path.IsPathRooted(dest) || (!File.Exists(dest) && !Directory.Exists(dest)))
                 { ShowStatus("找不到原来的位置，文件可能已移动。"); return; }
-                Process started = Process.Start(new ProcessStartInfo { FileName = dest, UseShellExecute = true });
-                if (started != null) started.Dispose();
-                Feedback(bagFeedback, "");
+                string issue=OpenWindowsItem(dest);
+                if(issue==null)Feedback(bagFeedback,"");else ShowStatus(issue);
             }
-            catch (Win32Exception) { ShowStatus("Windows 无法打开这项内容，请检查默认应用及文件位置。"); }
-            catch (InvalidOperationException) { ShowStatus("无法从当前位置打开，请重新选择。"); }
             catch (ArgumentException) { ShowStatus("路径无效，请重新收藏。"); }
-            catch (IOException) { ShowStatus("无法读取这个位置。"); }
-            catch (UnauthorizedAccessException) { ShowStatus("Windows 未允许打开这个位置。"); }
+        }
+        static string OpenWindowsItem(string target)
+        {
+            try{
+                using(Process opened=Process.Start(new ProcessStartInfo{FileName=target,UseShellExecute=true})){}
+                return null;
+            }
+            catch(Win32Exception){return "Windows 无法打开这项内容，请检查默认应用及文件位置。";}
+            catch(InvalidOperationException){return "无法从当前位置打开，请重新选择。";}
+            catch(ArgumentException){return "路径无效，请重新选择。";}
+            catch(IOException){return "无法读取这个位置。";}
+            catch(UnauthorizedAccessException){return "Windows 未允许打开这个位置。";}
         }
     }
 }

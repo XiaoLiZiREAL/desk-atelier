@@ -13,7 +13,7 @@ HERE=Path(__file__).resolve().parent
 ITEMS=("paper","map_empty","map_filled","potion_bottle_drinkable","potion_overlay",
        "emerald","iron_pickaxe","iron_sword","bow_standby","bow_pulling_0","bow_pulling_1",
        "bow_pulling_2","fishing_rod_cast","fishing_rod_uncast","fish_cod_raw",
-       "leather_boots","leather_boots_overlay")
+       "leather_boots","leather_boots_overlay","iron_hoe","seeds_wheat","wheat")
 
 def input_text():
     return "".join(key+" "+" ".join(map(str,frame.inputs()))+"\n" for key,frame in frames())
@@ -36,22 +36,23 @@ def sample(client,jars,jdk):
             if len(numbers)!=36:
                 raise ValueError("Incomplete biped transform")
             poses.append(name+" "+" ".join(format(float(n),".8g") for n in numbers))
-        (HERE/"poses-1.8.txt").write_text("\n".join(poses)+"\n",encoding="ascii")
+        (HERE/"poses-1.8.txt").write_bytes(("\n".join(poses)+"\n").encode("ascii"))
     dest=HERE/"items"
     dest.mkdir(exist_ok=True)
     with ZipFile(client) as jar:
         for name in ITEMS:
             (dest/(name+".png")).write_bytes(jar.read("assets/minecraft/textures/items/"+name+".png"))
-        for name in ("dirt","cobblestone","stone","destroy_stage_7"):
+        for name in ("dirt","cobblestone","stone","destroy_stage_7","farmland_dry","farmland_wet",
+                     "wheat_stage_0","wheat_stage_3","wheat_stage_7"):
             (dest/(name+".png")).write_bytes(jar.read("assets/minecraft/textures/blocks/"+name+".png"))
         aliases={"bow_standby":"bow","map_empty":"map","map_filled":"filled_map","fish_cod_raw":"cod",
-                 "fishing_rod_uncast":"fishing_rod","potion_bottle_drinkable":"bottle_drinkable"}
+                 "fishing_rod_uncast":"fishing_rod","potion_bottle_drinkable":"bottle_drinkable","seeds_wheat":"wheat_seeds"}
         displays={}
         for name in sorted({frame.item for _,frame in frames() if frame.item}):
             model=aliases.get(name,name)
             data=json.loads(jar.read("assets/minecraft/models/item/"+model+".json"))
             displays[name]=data["display"]["thirdperson"]
-        (dest/"display.json").write_text(json.dumps(displays,indent=2)+"\n",encoding="ascii")
+        (dest/"display.json").write_bytes((json.dumps(displays,indent=2)+"\n").encode("ascii"))
 
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
