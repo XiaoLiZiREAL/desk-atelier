@@ -183,12 +183,11 @@ namespace DeskMate
                 }
             }
             if (live) Paint(reading.LiveLyric, "", 0, !reading.StateKnown || Playing);
-            else if (Playing && reading.PlayerKey=="browser")
+            else if (Playing && (reading.PlayerKey == "browser" || ChinesePlayers.IsSupportedPlayer(reading.PlayerKey)))
             {
-                CurrentLine="";
-                double progress=reading.HasTimeline?reading.PositionAt(DateTime.UtcNow).TotalSeconds/reading.Duration.TotalSeconds:0;
-                app.Pet.ShowBrowserTrack(reading.Title,reading.Artist,progress,reading.HasTimeline);
-                overlayFilled=true;
+                CurrentLine = "";
+                app.Pet.ShowTrack(reading);
+                overlayFilled = true;
             }
             else Paint("", "", 0, false);
         }

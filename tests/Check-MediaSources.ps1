@@ -4,7 +4,7 @@ $app=[Reflection.Assembly]::LoadFrom((Resolve-Path -LiteralPath $Program).Path)
 $static=[Reflection.BindingFlags]'NonPublic,Static'
 $key=$app.GetType('DeskMate.ChinesePlayers').GetMethod('Key',$static)
 $choose=$app.GetType('DeskMate.MediaWatcher').GetMethod('Choose',$static)
-$preferWeb=$app.GetType('DeskMate.MediaWatcher').GetMethod('PreferNetEaseWeb',$static)
+$preferWeb=$app.GetType('DeskMate.MediaWatcher').GetMethod('PreferWebPlayer',$static)
 $make=$app.GetType('DeskMate.MediaReading').GetConstructors([Reflection.BindingFlags]'NonPublic,Instance')[0]
 $now=[DateTime]::UtcNow
 function Sample([string]$id,[string]$channel,[bool]$playing,[string]$line) {
@@ -33,6 +33,33 @@ if(![Object]::ReferenceEquals($choice,$browser) -or $choice.LiveLyric){throw 'Cl
 $paused=Sample 'MSEdge' 'smtc' $false ''
 $choice=$choose.Invoke($null,@('auto',$paused,$client,$now))
 if(![Object]::ReferenceEquals($choice,$client)){throw 'Paused browser prevented active desktop detection'}
+$pausedClient=Sample 'cloudmusic' 'smtc' $false ''
+$choice=$choose.Invoke($null,@('auto',$pausedClient,$client,$now))
+if($choice.Playing -or $choice.LiveLyric){throw 'A cached player window overrode a system pause'}
+$audioChoice=$app.GetType('DeskMate.MediaWatcher').GetMethod('ChooseAudio',$static)
+$sodaOutput=$make.Invoke(@('','','SodaMusic.exe','player-audio','soda',[TimeSpan]::Zero,[TimeSpan]::Zero,
+    $true,$true,$false,$now,[double]1,'','','',''))
+if($audioChoice.Invoke($null,@($pausedClient,$sodaOutput)).PlayerKey -ne 'soda'){throw 'A paused client hid another audible player'}
+$sodaPause=Sample 'SodaMusic.exe' 'smtc' $false ''
+if($audioChoice.Invoke($null,@($sodaPause,$sodaOutput)).Playing){throw 'Output tail overrode a system pause'}
+if($audioChoice.Invoke($null,@($client,$sodaOutput)).PlayerKey -ne 'netease'){throw 'Output-only reading replaced identified playing track'}
+function WindowTrack([string]$key,[string]$id,[DateTime]$when,[string]$title='current track') {
+    $make.Invoke(@($title,'singer',$id,'window',$key,[TimeSpan]::FromSeconds(5),[TimeSpan]::FromSeconds(90),
+        $false,$false,$true,$when,[double]1,'','current lyric','accessibility',''))
+}
+$nowPlaying=$audioChoice.Invoke($null,@((WindowTrack 'soda' 'SodaMusic' $now),$sodaOutput))
+if($nowPlaying.Title -ne 'current track' -or !$nowPlaying.Playing -or $nowPlaying.HasTimeline -or $nowPlaying.LiveLyric -ne 'current lyric'){
+    throw 'Output should corroborate the current native window and its live lyric without inventing a clock'
+}
+$lyricOnly=$audioChoice.Invoke($null,@((WindowTrack 'soda' 'SodaMusic' $now ''),$sodaOutput))
+if($lyricOnly.Title -or $lyricOnly.LiveLyric -ne 'current lyric' -or $lyricOnly.LyricSource -ne 'accessibility'){throw 'Lost a lyric-only desktop window'}
+$partialSession=$make.Invoke(@('system track','system artist','SodaMusic.exe','smtc','soda',[TimeSpan]::FromSeconds(6),
+    [TimeSpan]::FromSeconds(120),$false,$false,$true,$now,[double]1,'','','',''))
+$confirmed=$audioChoice.Invoke($null,@($partialSession,$sodaOutput))
+if($confirmed.Title -ne 'system track' -or $confirmed.Source -ne 'smtc' -or !$confirmed.Playing -or $confirmed.HasTimeline){throw 'Lost track from a system session without transport state'}
+foreach($uncorroborated in @((WindowTrack 'soda' 'SodaMusic' $now.AddSeconds(-8)),(WindowTrack 'migu' 'MiguMusic' $now))) {
+    if($audioChoice.Invoke($null,@($uncorroborated,$sodaOutput)).Title){throw 'A stale window or a different client leaked its title'}
+}
 
 function Track([string]$channel,[string]$title,[string]$artist,[double]$seconds,[double]$duration,
     [string]$appId='Chrome',[bool]$playing=$true,[bool]$known=$true) {
@@ -52,6 +79,9 @@ if($result.Artist -ne 'known artist' -or $result.Duration -ne $matching.Duration
     throw "Matching track and clocks failed: artist=$($result.Artist) duration=$($result.Duration.TotalSeconds) source=$($result.Source)"
 }
 $withArtist=Track 'netease-web' 'song' 'known artist' 0 0
+$excerpt=Track 'soda-web' 'song' 'known artist' 0 0
+$preview=$preferWeb.Invoke($null,@($matching,$excerpt))
+if(![Object]::ReferenceEquals($preview,$excerpt) -or $preview.HasTimeline){throw 'A Soda excerpt inherited a full-song clock'}
 $result=$preferWeb.Invoke($null,@($matching,$withArtist))
 if(!$result.HasTimeline -or $result.Duration -ne $matching.Duration){throw 'Matching title and artist lost system timeline'}
 $missing=$preferWeb.Invoke($null,@($null,$withArtist))

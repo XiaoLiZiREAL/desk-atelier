@@ -24,38 +24,53 @@ namespace DeskMate
         private LyricPanel lyrics;
         private string lyricLine="", lyricNext="";
         private double lyricFraction;
-        private bool lyricPlaying, placementDirty, placingLyrics, dancing, browserTrack, showProgress;
+        private enum MusicPanelKind { Lyric, BrowserTrack, PlayerTrack }
+        private MusicPanelKind panelKind;
+        private bool lyricPlaying, placementDirty, placingLyrics, dancing, showProgress;
         private int lyricRevision;
         private long singingSince;
 
-        public string KaraokeLyric { get { return browserTrack ? "" : lyricLine; } }
-        public bool ShowingBrowserTrack { get { return browserTrack && KaraokeVisible; } }
+        public string KaraokeLyric { get { return panelKind == MusicPanelKind.Lyric ? lyricLine : ""; } }
+        public bool ShowingBrowserTrack { get { return panelKind == MusicPanelKind.BrowserTrack && KaraokeVisible; } }
         public bool KaraokeVisible { get { return lyrics!=null && lyrics.Window.IsVisible; } }
         public bool KaraokeMoving { get { return dancing; } }
 
         public void SetKaraoke(string line, string next, double fraction, bool singing)
         {
-            SetMusicPanel(line,next,fraction,singing,false,true);
+            SetMusicPanel(line,next,fraction,singing,MusicPanelKind.Lyric,true);
         }
 
-        internal void ShowBrowserTrack(string title,string artist,double fraction,bool hasTimeline)
+        internal void ShowTrack(MediaReading reading)
         {
-            bool hasTitle=!String.IsNullOrWhiteSpace(title);
-            string detail=String.IsNullOrWhiteSpace(artist)?(hasTitle?"浏览器正在播放":""):"正在播放 · "+artist;
-            SetMusicPanel(hasTitle?title:"浏览器正在播放音频",detail,fraction,true,true,hasTimeline);
+            bool browser = reading.PlayerKey == "browser";
+            string source = browser ? "浏览器" : ChinesePlayers.DisplayName(reading.PlayerKey);
+            if (browser && reading.Source.EndsWith("-web", StringComparison.Ordinal))
+            {
+                string key = reading.Source.Substring(0, reading.Source.Length - 4);
+                string service = key == "qianqian" ? "千千音乐" : ChinesePlayers.DisplayName(key);
+                if (service.Length > 0) source = service + "网页版";
+            }
+
+            bool hasTitle = !String.IsNullOrWhiteSpace(reading.Title);
+            string title = hasTitle ? reading.Title : source + "正在播放音频";
+            string detail = "";
+            if (hasTitle) detail = String.IsNullOrWhiteSpace(reading.Artist) ? source + "正在播放" : source + " · " + reading.Artist;
+            bool showTimeline = hasTitle && reading.HasTimeline && reading.Duration > TimeSpan.Zero;
+            double progress = showTimeline ? reading.PositionAt(DateTime.UtcNow).TotalSeconds / reading.Duration.TotalSeconds : 0;
+            SetMusicPanel(title,detail,progress,true,browser ? MusicPanelKind.BrowserTrack : MusicPanelKind.PlayerTrack,showTimeline);
         }
 
-        private void SetMusicPanel(string line,string next,double fraction,bool singing,bool track,bool progress)
+        private void SetMusicPanel(string line,string next,double fraction,bool singing,MusicPanelKind kind,bool progress)
         {
             int version=Interlocked.Increment(ref lyricRevision);
             Action update=delegate
             {
                 if(disposed || version!=Volatile.Read(ref lyricRevision))return;
                 string current=(line??"").Trim(), following=(next??"").Trim();
-                bool changed=current!=lyricLine || following!=lyricNext || track!=browserTrack || progress!=showProgress;
+                bool changed=current!=lyricLine || following!=lyricNext || kind!=panelKind || progress!=showProgress;
                 bool playbackChanged=singing!=lyricPlaying;
                 if(singing && (!lyricPlaying || current!=lyricLine))singingSince=clock.ElapsedMilliseconds;
-                lyricLine=current;lyricNext=following;lyricPlaying=singing;browserTrack=track;showProgress=progress;
+                lyricLine=current;lyricNext=following;lyricPlaying=singing;panelKind=kind;showProgress=progress;
                 lyricFraction=double.IsNaN(fraction)||double.IsInfinity(fraction)?0:Math.Max(0,Math.Min(1,fraction));
                 if(changed)placementDirty=true;
                 if(lyrics!=null)
@@ -143,9 +158,10 @@ namespace DeskMate
         private void StyleLyricText()
         {
             lyrics.Current.Text=lyricLine;
-            lyrics.Current.FontSize=browserTrack?15:lyricLine.Length>120?14:lyricLine.Length>52?16:18;
-            lyrics.Current.TextWrapping=browserTrack?TextWrapping.NoWrap:TextWrapping.Wrap;
-            lyrics.Current.TextTrimming=browserTrack?TextTrimming.CharacterEllipsis:TextTrimming.None;
+            bool track = panelKind != MusicPanelKind.Lyric;
+            lyrics.Current.FontSize=track?15:lyricLine.Length>120?14:lyricLine.Length>52?16:18;
+            lyrics.Current.TextWrapping=track?TextWrapping.NoWrap:TextWrapping.Wrap;
+            lyrics.Current.TextTrimming=track?TextTrimming.CharacterEllipsis:TextTrimming.None;
             lyrics.Current.LineHeight=lyrics.Current.FontSize+7;
             lyrics.Next.Text=lyricNext;
             lyrics.Next.Visibility=lyricNext.Length==0?Visibility.Collapsed:Visibility.Visible;
@@ -222,7 +238,7 @@ namespace DeskMate
             if(!KaraokeVisible || !lyricPlaying)return false;
             dancing=true;
             var singing=ActionFrames(character,"song");
-            if(singing!=null)ShowPose(singing[ActionScore.SungPose(now-singingSince,browserTrack?0:lyricFraction)]);
+            if(singing!=null)ShowPose(singing[ActionScore.SungPose(now-singingSince,panelKind == MusicPanelKind.Lyric ? lyricFraction : 0)]);
             else DrawFrame(Idle,(int)((now-singingSince)/320)%Counts[Idle]);
             return true;
         }

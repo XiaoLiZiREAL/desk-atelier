@@ -3,6 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Threading;
 using DeskMate;
 
@@ -32,14 +35,31 @@ internal static class BrowserMusicChecks
         throw new InvalidOperationException(message);
     }
 
-    static void Publish(string title,string source,bool playing,int seconds)
+    static void Publish(string title,string source,bool playing,int seconds,string player="browser",string appId="chrome",string live="")
     {
-        bool timeline=source=="smtc" || source=="netease-web";
+        bool identified=title.Length>0 && (source=="smtc" || source.EndsWith("-web",StringComparison.Ordinal));
+        bool timeline=identified && source!="soda-web";
         var sample=Snapshot.Invoke(new object[]{
-            title,timeline?Artist:"","chrome",source,"browser",TimeSpan.FromSeconds(seconds),
-            TimeSpan.FromSeconds(timeline?72:0),playing,true,timeline,DateTime.UtcNow,1d,"","","",""
+            title,identified?Artist:"",appId,source,player,TimeSpan.FromSeconds(seconds),
+            TimeSpan.FromSeconds(timeline?72:0),playing,true,timeline,DateTime.UtcNow,1d,"",live,live.Length>0?"accessibility":"",""
         });
         Latest.SetValue(watcher,sample);
+    }
+
+    static bool ContainsText(DependencyObject node,string text)
+    {
+        var label=node as TextBlock;
+        if(label!=null && label.IsVisible && label.Text==text)return true;
+        for(int i=0;i<VisualTreeHelper.GetChildrenCount(node);i++)
+            if(ContainsText(VisualTreeHelper.GetChild(node,i),text))return true;
+        return false;
+    }
+
+    static bool CardContains(string text)
+    {
+        foreach(Window window in app.Windows)
+            if(window.Title=="桌宠歌词" && window.IsVisible && ContainsText(window,text))return true;
+        return false;
     }
 
     static void CheckPresentation()
@@ -63,6 +83,35 @@ internal static class BrowserMusicChecks
         AssertEventually(()=>!app.Music.HasTrack && !app.Music.HasTimeline && String.IsNullOrEmpty(app.Music.CurrentLine) &&
             app.Pet.ShowingBrowserTrack && app.Pet.KaraokeMoving && String.IsNullOrEmpty(app.Pet.KaraokeLyric),
             "unidentified browser audio clears the previous lyric and shows the generic card");
+        Publish(First,"smtc",true,8,"soda","SodaMusic.exe");
+        AssertEventually(()=>app.Music.HasTrack && app.Pet.KaraokeMoving && !app.Pet.ShowingBrowserTrack &&
+            String.IsNullOrEmpty(app.Pet.KaraokeLyric) && CardContains(First) && CardContains("汽水音乐 · "+Artist),
+            "Soda Music metadata without lyrics shows the client, artist and song separately from lyrics");
+        Publish(First,"smtc",false,8,"soda","SodaMusic.exe");
+        AssertEventually(()=>!app.Pet.KaraokeVisible && !app.Pet.KaraokeMoving,"pausing Soda hides the song card");
+        Publish(Second,"smtc",true,14,"soda","SodaMusic.exe");
+        AssertEventually(()=>app.Pet.KaraokeMoving && app.Music.CurrentLine=="浏览器中的第二句",
+            "a Soda track with a matching LRC uses the reported playhead after resuming");
+        Publish("","player-audio",true,0,"soda","SodaMusic.exe");
+        AssertEventually(()=>!app.Music.HasTrack && !app.Music.HasTimeline && String.IsNullOrEmpty(app.Music.CurrentLine) &&
+            app.Pet.KaraokeMoving && CardContains("汽水音乐正在播放音频"),
+            "Soda audio with no metadata drops the previous lyrics and displays only its source");
+        Publish(First,"smtc",true,0,"other","Unsupported.exe");
+        AssertEventually(()=>!app.Pet.KaraokeVisible && !app.Pet.KaraokeMoving && String.IsNullOrEmpty(app.Music.CurrentLine),
+            "an unidentified native app without lyrics clears the recognized player's card");
+        Publish(First,"netease-web",true,8);
+        AssertEventually(()=>app.Pet.ShowingBrowserTrack && CardContains("网易云音乐网页版 · "+Artist),
+            "verified web controls label the web service instead of a generic browser");
+        Publish(Second,"soda-web",true,0,live:"试听页当前行");
+        AssertEventually(()=>!app.Music.HasTimeline && app.Pet.KaraokeMoving && app.Pet.KaraokeLyric=="试听页当前行",
+            "Soda share sings the visible official lyric even when a full song LRC exists");
+        Publish(Second,"soda-web",true,0,live:"试听页下一行");
+        AssertEventually(()=>app.Pet.KaraokeLyric=="试听页下一行","Soda share follows the next highlighted line without a guessed clock");
+        Publish(Second,"soda-web",false,0);
+        AssertEventually(()=>!app.Pet.KaraokeVisible && !app.Pet.KaraokeMoving,"pausing a Soda excerpt clears its live lyric");
+        Publish(First,"qianqian-web",true,8);
+        AssertEventually(()=>app.Pet.ShowingBrowserTrack && CardContains("千千音乐网页版 · "+Artist),
+            "a web-only service gets its verified player label");
         app.Music.SetEnabled(false);
         AssertEventually(()=>!app.Music.Playing && !app.Pet.KaraokeVisible && !app.Pet.KaraokeMoving,
             "the listening switch clears the card and stops movement");

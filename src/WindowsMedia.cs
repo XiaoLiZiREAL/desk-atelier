@@ -82,7 +82,7 @@ namespace DeskMate
             get { lock(gate)return choice; }
             set
             {
-                string p=value=="netease" || value=="qq" || value=="kugou" ? value : "auto";
+                string p=ChinesePlayers.IsSupportedPlayer(value) ? value.ToLowerInvariant() : "auto";
                 lock(gate)
                 {
                     if(choice==p)return;
@@ -132,12 +132,14 @@ namespace DeskMate
                     var window=windows.Sample(WindowPreference(selected,reading));
                     reading=Choose(selected,reading,window,currentSongSince);
                 }
-                if(selected=="auto" && (reading==null || !reading.StateKnown || !reading.Playing ||
-                    (reading.PlayerKey!="browser" && reading.Title.Length==0 && reading.LiveLyric.Length==0)))
-                    reading=browserAudio.Sample()??reading;
+                if(reading==null || !reading.StateKnown || !reading.Playing || reading.PlayerKey=="other")
+                {
+                    string paused=reading!=null && reading.StateKnown && !reading.Playing ? reading.PlayerKey : "";
+                    reading=ChooseAudio(reading,browserAudio.Sample(selected,paused));
+                }
                 else browserAudio.Reset();
                 if(selected=="auto" && reading!=null && reading.PlayerKey=="browser" && reading.StateKnown && reading.Playing)
-                    reading=PreferNetEaseWeb(reading,netEaseWeb.Sample(ChinesePlayers.BrowserProcess(reading.AppId)));
+                    reading=PreferWebPlayer(reading,netEaseWeb.Sample(ChinesePlayers.BrowserProcess(reading.AppId)));
                 if(reading==null)reading=MediaReading.Empty(systemError.Length>0?systemError:
                     selected=="auto"?"等待播放器发布歌曲信息":"暂未检测到所选播放器的歌曲信息");
                 lock(gate)if(!disposed && revision==version)Volatile.Write(ref latest,reading);
@@ -158,6 +160,25 @@ namespace DeskMate
             if(selected!="auto" || system==null || !system.StateKnown || !system.Playing || system.PlayerKey=="other")return selected;
             return system.PlayerKey;
         }
+        internal static MediaReading ChooseAudio(MediaReading reading,MediaReading audio)
+        {
+            if(audio==null)return reading;
+            if(reading==null)return audio;
+            bool same=reading.PlayerKey==audio.PlayerKey;
+            if(reading.StateKnown && reading.Playing)
+                return reading.PlayerKey=="other" && audio.Source=="player-audio"?audio:reading;
+            if(same && reading.PlayerKey!="browser")
+            {
+                if(reading.StateKnown)return reading;
+                // Output from this player can corroborate its metadata when no transport state is available.
+                if((reading.Source=="window" || reading.Source=="smtc") && (reading.Title.Length>0 || reading.LiveLyric.Length>0) &&
+                    (audio.SampledUtc-reading.SampledUtc).Duration()<TimeSpan.FromSeconds(2))
+                    return new MediaReading(reading.Title,reading.Artist,reading.AppId,reading.Source,reading.PlayerKey,
+                        TimeSpan.Zero,TimeSpan.Zero,true,true,false,audio.SampledUtc,1,"播放器正在发声",
+                        reading.LiveLyric,reading.LyricSource,reading.LyricDiagnostic);
+            }
+            return audio;
+        }
         static bool SameTag(string a,string b)
         {
             if(String.Equals(a,b,StringComparison.OrdinalIgnoreCase))return true;
@@ -168,9 +189,12 @@ namespace DeskMate
                 return String.Equals(left,right,StringComparison.OrdinalIgnoreCase);
             }catch(ArgumentException){return false;}
         }
-        internal static MediaReading PreferNetEaseWeb(MediaReading browser,MediaReading web)
+        internal static MediaReading PreferWebPlayer(MediaReading browser,MediaReading web)
         {
             if(web==null || !web.StateKnown || !web.Playing || String.IsNullOrWhiteSpace(web.Title))return browser;
+            // The Soda share page plays an excerpt. The browser clock starts at the excerpt,
+            // while an LRC file refers to the full recording. Use the page's current subtitle.
+            if(web.Source=="soda-web")return web;
             if(browser==null || browser.Source!="smtc" || !browser.StateKnown || !browser.Playing ||
                 !SameTag(web.Title,browser.Title))return web;
             string browserProcess=ChinesePlayers.BrowserProcess(browser.AppId);
@@ -195,6 +219,7 @@ namespace DeskMate
         {
             if(window==null || (selected!="auto" && window.PlayerKey!=selected))return system;
             if(system==null)return window;
+            if(system.PlayerKey==window.PlayerKey && system.StateKnown && !system.Playing && window.Playing)return system;
             if(system.PlayerKey==window.PlayerKey && window.SampledUtc<songSince &&
                 (window.Title.Length==0 || !SameTag(system.Title,window.Title) || (window.Artist.Length>0 && !SameTag(system.Artist,window.Artist))))return system;
             if(window.StateKnown && window.Playing && window.Title.Length>0 && (!system.StateKnown || !system.Playing || system.PlayerKey=="other"))

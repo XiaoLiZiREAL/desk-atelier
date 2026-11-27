@@ -18,9 +18,14 @@ if($LASTEXITCODE){throw 'Browser presentation checks failed to compile'}
 $siteChecks=Join-Path $run 'NetEaseBrowserChecks.exe'
 & "$framework/csc.exe" @refs "/out:$siteChecks" (Join-Path $PSScriptRoot 'NetEaseBrowserChecks.cs')
 if($LASTEXITCODE){throw 'NetEase web player checks failed to compile'}
+$domesticChecks=Join-Path $run 'DomesticWebChecks.exe'
+& "$framework/csc.exe" @refs "/out:$domesticChecks" (Join-Path $PSScriptRoot 'DomesticWebChecks.cs')
+if($LASTEXITCODE){throw 'Domestic web player checks failed to compile'}
 if(!$CompileOnly){
     & $siteChecks
     if($LASTEXITCODE){throw 'NetEase web player checks failed'}
+    & $domesticChecks
+    if($LASTEXITCODE){throw 'Domestic web player checks failed'}
     & $harness $run
     if($LASTEXITCODE){throw 'Browser presentation checks failed'}
 }

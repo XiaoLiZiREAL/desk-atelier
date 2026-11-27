@@ -30,7 +30,7 @@ namespace DeskMate
             internal AutomationElement Element;
             internal int[] Runtime;
             internal int Pid;
-            internal string Browser,Title,Artist;
+            internal string Browser,Title,Artist,Caption,Source;
         }
         delegate bool EnumWindow(IntPtr window,IntPtr data);
         [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindow callback,IntPtr data);
@@ -52,7 +52,7 @@ namespace DeskMate
                         try { if(!disposed)result=Scan(browserName); } catch(Exception) { lastTab=null; }
                         lock(gate) {
                             if(disposed)lastTab=null;
-                            else { cache=result; cacheBrowser=browserName; next=clock.ElapsedMilliseconds+700; }
+                            else { cache=result; cacheBrowser=browserName; next=clock.ElapsedMilliseconds+1100; }
                             busy=false;
                         }
                     });
@@ -81,7 +81,12 @@ namespace DeskMate
         }
         internal static bool SameAudibleTab(string label,string title)
         {
-            string prefix="▶ "+title+" - ";
+            return AudibleCaption(label,"▶ "+title);
+        }
+        internal static bool AudibleCaption(string label,string caption)
+        {
+            if(String.IsNullOrWhiteSpace(caption))return false;
+            string prefix=caption.Trim()+" - ";
             if(label==null || !label.StartsWith(prefix,StringComparison.Ordinal))return false;
             string status=label.Substring(prefix.Length);
             return AudioLabel.IsMatch(status) && !MuteLabel.IsMatch(status);
@@ -122,7 +127,8 @@ namespace DeskMate
                 int pid;GetWindowThreadProcessId(h,out pid);
                 if(owners.Contains(pid) && IsWindowVisible(h)){
                     var caption=new StringBuilder(512);GetWindowText(h,caption,caption.Capacity);
-                    if(caption.ToString().StartsWith("▶ ",StringComparison.Ordinal))result.Add(h);
+                    string name=caption.ToString();
+                    if(name.StartsWith("▶ ",StringComparison.Ordinal) || DomesticWebPlayer.MayBePlayer(name))result.Add(h);
                 }
                 return true;
             },IntPtr.Zero);
@@ -138,8 +144,33 @@ namespace DeskMate
                 Is(AutomationElement.AutomationIdProperty,"RootWebArea")));
             if(doc==null)return null;
             string url=Value(doc);
-            if(!Site(url))return null;
             string caption=doc.Current.Name;
+            bool netease=Site(url);
+            if(!netease && DomesticWebPlayer.Service(url).Length==0)return null;
+            var tabs=root.FindFirst(TreeScope.Descendants,Is(AutomationElement.ControlTypeProperty,ControlType.Tab));
+            var selected=tabs==null?null:tabs.FindFirst(TreeScope.Descendants,new AndCondition(Is(AutomationElement.ControlTypeProperty,ControlType.TabItem),
+                Is(SelectionItemPattern.IsSelectedProperty,true)));
+            if(selected!=null && !AudibleCaption(selected.Current.Name,caption))return null;
+            if(!netease && selected==null)return null;
+            MediaReading result;
+            if(!netease)result=DomesticWebPlayer.Read(doc,browser,url,caption);
+            else result=ReadNetEase(doc,browser,url,caption);
+            if(result==null || Value(doc)!=url || doc.Current.Name!=caption)return null;
+            if(selected!=null) {
+                if(!Object.Equals(selected.GetCurrentPropertyValue(SelectionItemPattern.IsSelectedProperty,true),true) || !AudibleCaption(selected.Current.Name,caption))return null;
+                // A fixed-player title such as “QQ音乐” survives track changes. Only
+                // pin services whose visible verified track is also named by the tab.
+                if(CanPin(result.Source))
+                    verified=new VerifiedTab{Element=selected,Runtime=selected.GetRuntimeId(),Pid=selected.Current.ProcessId,Browser=browser,Title=result.Title,Artist=result.Artist,Caption=caption,Source=result.Source};
+            }
+            return result;
+        }
+        internal static bool CanPin(string source)
+        {
+            return source=="netease-web" || source=="kugou-web" || source=="soda-web";
+        }
+        static MediaReading ReadNetEase(AutomationElement doc,string browser,string url,string caption)
+        {
             if(!caption.StartsWith("▶ ",StringComparison.Ordinal))return null;
             // Chromium flattens #g_player in its accessibility tree. Its containing
             // m-playbar remains a direct child of the main document, alongside the content iframe.
@@ -161,18 +192,7 @@ namespace DeskMate
                     node.Cached.ControlType==ControlType.Hyperlink));
             }
             if(!playing)return null;
-            var result=ParseBar(browser,url,caption,parts);
-            if(result==null || !Site(Value(doc)) || doc.Current.Name!=caption)return null;
-            var tabs=root.FindFirst(TreeScope.Descendants,Is(AutomationElement.ControlTypeProperty,ControlType.Tab));
-            if(tabs!=null){
-                var selected=tabs.FindFirst(TreeScope.Descendants,new AndCondition(Is(AutomationElement.ControlTypeProperty,ControlType.TabItem),
-                    Is(SelectionItemPattern.IsSelectedProperty,true)));
-                if(selected!=null) {
-                    if(!SameAudibleTab(selected.Current.Name,result.Title))return null;
-                    verified=new VerifiedTab{Element=selected,Runtime=selected.GetRuntimeId(),Pid=selected.Current.ProcessId,Browser=browser,Title=result.Title,Artist=result.Artist};
-                }
-            }
-            return result;
+            return ParseBar(browser,url,caption,parts);
         }
         MediaReading Scan(string browser)
         {
@@ -181,21 +201,27 @@ namespace DeskMate
             foreach(var h in Windows(browser)){
                 if(disposed)return null;
                 VerifiedTab candidate;
-                var r=Visible(browser,h,out candidate);
+                MediaReading r;
+                try { r=Visible(browser,h,out candidate); }
+                catch(ElementNotAvailableException) { continue; }
+                catch(COMException) { continue; }
                 if(r==null)continue;
                 if(found!=null){lastTab=null;return null;}
                 found=r;pin=candidate;
             }
-            if(found!=null){lastTab=pin;return found;}
             var tab=lastTab;
-            lastTab=null;
-            if(disposed || tab==null || tab.Browser!=browser)return null;
-            var current=tab.Element.Current;
-            if(current.ProcessId!=tab.Pid || !tab.Runtime.SequenceEqual(tab.Element.GetRuntimeId()) ||
-                !SameAudibleTab(current.Name,tab.Title) || !Object.Equals(tab.Element.GetCurrentPropertyValue(SelectionItemPattern.IsSelectedProperty,true),false))return null;
-            lastTab=tab;
-            return new MediaReading(tab.Title,tab.Artist,browser,"netease-web","browser",TimeSpan.Zero,TimeSpan.Zero,true,true,false,
-                DateTime.UtcNow,1,"网易云后台标签正在播放，进度暂不可读");
+            bool background=false;
+            if(!disposed && tab!=null && tab.Browser==browser) {
+                try {
+                    var current=tab.Element.Current;
+                    background=current.ProcessId==tab.Pid && tab.Runtime.SequenceEqual(tab.Element.GetRuntimeId()) &&
+                        AudibleCaption(current.Name,tab.Caption) && Object.Equals(tab.Element.GetCurrentPropertyValue(SelectionItemPattern.IsSelectedProperty,true),false);
+                } catch(ElementNotAvailableException) {} catch(COMException) {}
+            }
+            if(!background) { lastTab=pin; return found; }
+            if(found!=null)return null;
+            return new MediaReading(tab.Title,tab.Artist,browser,tab.Source,"browser",TimeSpan.Zero,TimeSpan.Zero,true,true,false,
+                DateTime.UtcNow,1,"后台音乐标签正在播放，进度暂不可读");
         }
     }
 }

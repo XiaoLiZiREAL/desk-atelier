@@ -12,29 +12,36 @@ namespace DeskMate
         readonly Stopwatch clock=Stopwatch.StartNew();
         int lastPid;
         string lastApp="";
+        string lastKey="";
         long lastPeak;
 
-        internal void Reset() { lastPid=0;lastApp=""; }
+        internal void Reset() { lastPid=0;lastApp="";lastKey=""; }
 
-        internal MediaReading Sample()
+        sealed class Audible
+        {
+            internal string App,Key;
+            internal int Pid,Priority;
+        }
+
+        internal MediaReading Sample(string preferred="auto",string paused="")
         {
             DeviceEnumerator enumerator=null;
             DeviceCollection devices=null;
             bool previousActive=false;
-            string audible=null;
+            Audible audible=null;
             try
             {
                 enumerator=(DeviceEnumerator)new DeviceEnumeratorClass();
                 uint count;
-                // eRender, DEVICE_STATE_ACTIVE. A browser may use a different output from the default.
+                // A player may use a different output from the default.
                 if(enumerator.EnumAudioEndpoints(0,1,out devices)>=0 && devices.GetCount(out count)>=0)
-                    for(uint i=0;i<count && audible==null;i++)
+                    for(uint i=0;i<count;i++)
                     {
                         Device device=null;
                         try
                         {
                             if(devices.Item(i,out device)>=0)
-                                audible=ReadEndpoint(device,ref previousActive);
+                                ReadEndpoint(device,preferred,paused,ref previousActive,ref audible);
                         }
                         catch(COMException) { } // The endpoint may have been unplugged during enumeration.
                         finally { Release(device); }
@@ -43,14 +50,14 @@ namespace DeskMate
             catch(COMException) { }
             finally { Release(devices);Release(enumerator); }
 
-            if(audible!=null) { lastApp=audible;lastPeak=clock.ElapsedMilliseconds; }
+            if(audible!=null) { lastApp=audible.App;lastKey=audible.Key;lastPid=audible.Pid;lastPeak=clock.ElapsedMilliseconds; }
             else if(!previousActive || clock.ElapsedMilliseconds-lastPeak>SilenceGraceMs)
             { Reset();return null; }
-            return new MediaReading("","",lastApp,"browser-audio","browser",TimeSpan.Zero,TimeSpan.Zero,
-                true,true,false,DateTime.UtcNow,1,"浏览器正在输出音频，尚未提供歌曲信息");
+            return new MediaReading("","",lastApp,lastKey=="browser"?"browser-audio":"player-audio",lastKey,TimeSpan.Zero,TimeSpan.Zero,
+                true,true,false,DateTime.UtcNow,1,"正在输出音频，尚未提供歌曲信息");
         }
 
-        string ReadEndpoint(Device device,ref bool previousActive)
+        void ReadEndpoint(Device device,string preferred,string paused,ref bool previousActive,ref Audible best)
         {
             SessionManager manager=null;
             SessionEnumerator sessions=null;
@@ -59,7 +66,7 @@ namespace DeskMate
                 Guid iid=typeof(SessionManager).GUID;
                 int count;
                 if(device.Activate(ref iid,1,IntPtr.Zero,out manager)<0 ||
-                    manager.GetSessionEnumerator(out sessions)<0 || sessions.GetCount(out count)<0)return null;
+                    manager.GetSessionEnumerator(out sessions)<0 || sessions.GetCount(out count)<0)return;
                 for(int i=0;i<count;i++)
                 {
                     object raw=null;
@@ -70,9 +77,12 @@ namespace DeskMate
                         int state,pid;
                         if(control==null || control.GetState(out state)<0 || state!=1 ||
                             control.GetProcessId(out pid)!=0 || pid<=0)continue;
-                        string app;
-                        using(var process=Process.GetProcessById(pid))app=process.ProcessName+".exe";
-                        if(ChinesePlayers.BrowserProcess(app).Length==0)continue;
+                        string processName;
+                        using(var process=Process.GetProcessById(pid))processName=process.ProcessName;
+                        string app=processName+".exe",key=ChinesePlayers.Key(app);
+                        if(key!="browser" && !ChinesePlayers.IsProcess(key,processName))continue;
+                        if(preferred!="auto" && preferred!=key)continue;
+                        if(key==paused && key!="browser")continue;
                         var meter=raw as AudioMeter;
                         float peak;
                         if(meter==null || meter.GetPeakValue(out peak)<0)continue;
@@ -81,10 +91,12 @@ namespace DeskMate
                         float level;
                         if(volume!=null && ((volume.GetMute(out muted)>=0 && muted) ||
                             (volume.GetMasterVolume(out level)>=0 && level<=0)))continue;
-                        if(pid==lastPid)previousActive=true;
+                        if(pid==lastPid && key==lastKey)previousActive=true;
                         if(peak<MinimumPeak)continue;
-                        lastPid=pid;
-                        return app;
+                        // A dedicated music player supplies more evidence than an unidentified browser tab.
+                        int priority=(key=="browser"?0:2)+(pid==lastPid?1:0);
+                        if(best==null || priority>best.Priority)
+                            best=new Audible{App=app,Key=key,Pid=pid,Priority=priority};
                     }
                     catch(ArgumentException) { } // Process exited between GetProcessId and ProcessName.
                     catch(InvalidOperationException) { }
@@ -92,7 +104,6 @@ namespace DeskMate
                     catch(COMException) { }
                     finally { Release(raw); }
                 }
-                return null;
             }
             finally { Release(sessions);Release(manager); }
         }

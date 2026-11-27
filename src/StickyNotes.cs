@@ -69,7 +69,7 @@ namespace DeskMate
         StickyStock stickyStock;
         TextBox stickyEditor;
         TextBlock stickyHint,stickyCounter,stickyStatus;
-        Button stickyPin,stickyTrash,stickyUndo,paperGrip;
+        Button stickyPin,stickyTrash,stickyUndo,paperGrip,stickyClock;
         Path pinCap;
         DispatcherTimer stickySave;
         NoteItem stickyNote,deletedNote;
@@ -149,6 +149,7 @@ namespace DeskMate
             foot.ColumnDefinitions.Add(new ColumnDefinition());
             foot.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
             foot.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
+            foot.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
             stickyCounter=Ui.Text("",11,Ui.Muted);stickyCounter.FontFamily=new FontFamily("Consolas, Segoe UI");
             AutomationProperties.SetAutomationId(stickyCounter,"StickyPage");foot.Children.Add(stickyCounter);
             stickyStatus=Ui.Text("",11,Ui.Muted);stickyStatus.Margin=new Thickness(10,0,0,0);
@@ -157,14 +158,19 @@ namespace DeskMate
             stickyUndo=PaperAction("StickyUndo","撤销删除",RestoreSticky);stickyUndo.Content="撤销删除";
             stickyUndo.FontSize=11;stickyUndo.Padding=new Thickness(4,0,4,0);
             Grid.SetColumn(stickyUndo,2);foot.Children.Add(stickyUndo);
+            stickyClock=PaperAction("SetPaperTime","设置递回时间",delegate{ChoosePaperTime(null);});
+            stickyClock.Width=28;stickyClock.Height=28;
+            stickyClock.Content=Ui.Icon("\uE823",15,Ui.Muted);
+            Grid.SetColumn(stickyClock,3);foot.Children.Add(stickyClock);
             stickyTrash=PaperAction("StickyTrash","删除这张便签",DeleteSticky);stickyTrash.Width=32;stickyTrash.Height=28;
             stickyTrash.Content=PaperGlyph("M3,5 L17,5 M8,2.4 L12,2.4 L13,5 M5,5 L5.8,18 L14.2,18 L15,5 M8.4,8 L8.7,15 M11.6,8 L11.3,15",15,17);
-            Grid.SetColumn(stickyTrash,3);foot.Children.Add(stickyTrash);stickySurface.Children.Add(foot);
+            Grid.SetColumn(stickyTrash,4);foot.Children.Add(stickyTrash);stickySurface.Children.Add(foot);
             stickySurface.PreviewKeyDown+=delegate(object sender,KeyEventArgs e){
                 if(Keyboard.Modifiers!=ModifierKeys.Control || (e.Key!=Key.PageDown && e.Key!=Key.PageUp))return;
                 TurnSticky(e.Key==Key.PageDown?1:-1);e.Handled=true;
             };
             IsVisibleChanged+=delegate{
+                if(!IsVisible)ClosePaperTimePicker();
                 if(IsVisible && page=="notes")Dispatcher.BeginInvoke(DispatcherPriority.Input,(Action)delegate{
                     if(IsVisible && IsActive && page=="notes")stickyEditor.Focus();
                 });
@@ -212,8 +218,6 @@ namespace DeskMate
             if(paper.PaperTone>=0 && paper.PaperTone<3)stickyTone=paper.PaperTone;
             SelectSticky(index,false);
         }
-        internal void ShowPaperStatus(string message){stickyStatus.Text=message;stickyStatus.ToolTip=message;}
-
         bool FitsSticky(string addition)
         {
             // Keep a large legacy note editable and reject an over-limit paste
@@ -255,6 +259,7 @@ namespace DeskMate
         }
         void SelectSticky(int index,bool turn)
         {
+            ClosePaperTimePicker();
             var notes=app.Data.Notes;
             stickySlot=Math.Max(0,Math.Min(index,notes.Count));
             stickyNote=stickySlot<notes.Count?notes[stickySlot]:null;
@@ -280,6 +285,7 @@ namespace DeskMate
             stickyHint.Visibility=stickyEditor.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
             stickyEditor.IsReadOnly=index<0 && notes.Count>=StickyCapacity;
             stickyTrash.IsEnabled=index>=0;
+            stickyClock.IsEnabled=index>=0;
             paperGrip.IsEnabled=index>=0;
             stickyUndo.Visibility=deletedNote!=null && notes.Count<StickyCapacity?Visibility.Visible:Visibility.Collapsed;
             stickyStatus.Text="";
@@ -289,7 +295,12 @@ namespace DeskMate
                 stickyStatus.Text=(stickyNote.Done?"已完成":stickyNote.Notified?"已提醒":"提醒")+" · "+due.ToString("M/d HH:mm");
             }
             else if(index>=0 && stickyNote.Done)stickyStatus.Text="已完成";
-            else if(index>=0 && stickyNote.HeldByPet)stickyStatus.Text="伙伴已收好";
+            else if(index>=0){
+                var time=PaperTime.Read(stickyNote.Text,DateTime.Now);
+                if(stickyNote.PaperTimeKey!=Studio.ChosenPaperTime && time.Error!=null)stickyStatus.Text="时间待确认";
+                else if(stickyNote.HeldByPet)stickyStatus.Text="伙伴已收好";
+                else if(time.Utc>0)stickyStatus.Text="递出后提醒 · "+new DateTime(time.Utc,DateTimeKind.Utc).ToLocalTime().ToString("M/d HH:mm");
+            }
             stickyStatus.ToolTip=stickyStatus.Text;
             bool pinned=app.Data.StickyPinned;
             pinCap.Fill=SystemParameters.HighContrast?(pinned?SystemColors.HighlightBrush:SystemColors.WindowBrush):Ui.Color(pinned?"#A45D4E":"#FBF8E8");

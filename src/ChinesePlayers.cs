@@ -12,19 +12,40 @@ namespace DeskMate
 {
     internal sealed class PlayerLabel
     {
-        public string Id, Text, Kind, Context;
+        public string Id, Text, Kind, Context, TrackField="";
         public int Parent;
         public bool OnScreen;
         public PlayerLabel(string id,string text,string kind,string context,int parent,bool onScreen=true)
         { Id=id??"";Text=text??"";Kind=kind??"";Context=context??"";Parent=parent;OnScreen=onScreen; }
     }
 
-    // Only inspect the top-level windows owned by the three named desktop players.
+    // Inspect only top-level windows owned by a registered player executable.
     internal sealed class ChinesePlayers
     {
-        static readonly Dictionary<string,string[]> Processes=new Dictionary<string,string[]> {
-            {"netease",new[]{"cloudmusic"}},{"qq",new[]{"QQMusic"}},{"kugou",new[]{"KuGou","KuGouMusic"}}
+        sealed class Player
+        {
+            public readonly string Key,Name;
+            public readonly string[] Processes,Aliases;
+            public Player(string key,string name,string[] processes,params string[] aliases)
+            {Key=key;Name=name;Processes=processes;Aliases=aliases;}
+        }
+        static readonly Player[] Players={
+            new Player("netease","网易云音乐",new[]{"cloudmusic"},"NetEase.CloudMusic","NetEase Cloud Music","163music","网易云",
+                "1F8B0F94.122165AE053F_j2p0p5q0044a6"),
+            new Player("qq","QQ音乐",new[]{"QQMusic"},"Tencent.QQMusic","QQ 音乐"),
+            new Player("kugou","酷狗音乐",new[]{"KuGou","KuGouMusic"},"KuGou Music","酷狗"),
+            new Player("soda","汽水音乐",new[]{"SodaMusic","Soda Music"},"electron.app.SodaMusic"),
+            new Player("kuwo","酷我音乐",new[]{"KwMusic"},"Kuwo Music","酷我音乐盒"),
+            new Player("migu","咪咕音乐",new[]{"MiguMusic"},"Migu Music"),
+            new Player("lx","洛雪音乐助手",new[]{"lx-music-desktop"},"cn.toside.music.desktop","LX Music"),
+            new Player("yesplay","YesPlayMusic",new[]{"YesPlayMusic"})
         };
+        static readonly Dictionary<string,Player> ByKey=Players.ToDictionary(p=>p.Key,StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string,Player> ByProcess=Players.SelectMany(p=>p.Processes.Select(exe=>new { exe,p }))
+            .ToDictionary(entry=>entry.exe,entry=>entry.p,StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string,Player> ById=Players.SelectMany(p=>p.Aliases.Concat(p.Processes).Concat(new[]{p.Name})
+            .Distinct(StringComparer.OrdinalIgnoreCase).Select(id=>new { id,p }))
+            .ToDictionary(entry=>entry.id,entry=>entry.p,StringComparer.OrdinalIgnoreCase);
         // Windows media sessions use a shortcut AppID, an executable path, or a packaged app ID.
         static readonly HashSet<string> BrowserIds=new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
             "Chrome", "Chrome.exe", "ChromeBeta", "ChromeDev", "ChromeCanary", "Chrome SxS",
@@ -32,7 +53,7 @@ namespace DeskMate
             "Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe!App", "Microsoft.MicrosoftEdge_8wekyb3d8bbwe!MicrosoftEdge",
             "Firefox", "firefox.exe", "Mozilla.Firefox_n80bbvh6b1yt2!App", "308046B0AF4A39CB", "E7CF176E110C211B"
         };
-        static readonly string[] Brands={"网易云音乐","网易云","NetEase Cloud Music","QQ音乐","QQ 音乐","QQMusic","酷狗音乐","酷狗","KuGou Music"};
+        static readonly HashSet<string> Brands=new HashSet<string>(ById.Keys,StringComparer.OrdinalIgnoreCase);
         static readonly Regex TimePair=new Regex(@"(?<![\d:])((?:\d{1,2}:)?\d{1,3}:[0-5]\d)\s*[/／]\s*((?:\d{1,2}:)?\d{1,3}:[0-5]\d)(?![\d:])",RegexOptions.CultureInvariant);
         static readonly Regex SingleTime=new Regex(@"^(?:\d{1,2}:)?\d{1,3}:[0-5]\d$",RegexOptions.CultureInvariant);
         static readonly Regex SongLabel=new Regex(@"^(?:当前歌曲|正在播放|歌曲名|歌曲名称|歌名|曲名|Title|Track)\s*[：:]\s*(.+)$",RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);
@@ -44,7 +65,9 @@ namespace DeskMate
         int generation;
         string lastChoice="",cachedChoice="";
         bool scanning;
-        MediaReading cached,previous;
+        MediaReading cached;
+        Dictionary<string,MediaReading> previous=new Dictionary<string,MediaReading>();
+        int previousRevision=-1;
         long next;
         internal static string BrowserProcess(string id)
         {
@@ -59,15 +82,25 @@ namespace DeskMate
         }
         internal static string Key(string id)
         {
-            string s=(id??"").Trim().ToLowerInvariant();
-            if(BrowserProcess(s).Length>0)return "browser";
-            if(s.Contains("cloudmusic")||s.Contains("网易云音乐"))return "netease";
-            if(s.Contains("qqmusic")||s.Contains("qq音乐"))return "qq";
-            if(s.Contains("kugou")||s.Contains("酷狗音乐"))return "kugou";
-            return "other";
+            string value=(id??"").Trim();
+            if(value.IndexOf("://",StringComparison.Ordinal)>=0)return "other";
+            if(BrowserProcess(value).Length>0)return "browser";
+            int slash=Math.Max(value.LastIndexOf('\\'),value.LastIndexOf('/'));
+            string name=value.Substring(slash+1);
+            Player info;
+            if(name.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))
+                return ByProcess.TryGetValue(name.Substring(0,name.Length-4),out info)?info.Key:"other";
+            if(slash>=0)return "other";
+            int launchId=name.IndexOf('!');
+            if(launchId>0 && name.Substring(0,launchId).Contains("_"))name=name.Substring(0,launchId);
+            return ById.TryGetValue(name,out info)?info.Key:"other";
         }
+        internal static bool IsSupportedPlayer(string key)
+        {return key!=null && ByKey.ContainsKey(key);}
+        internal static string DisplayName(string key)
+        {Player info;return key!=null && ByKey.TryGetValue(key,out info)?info.Name:"";}
         internal static bool IsProcess(string player,string name)
-        {string[] names;return Processes.TryGetValue(player,out names)&&names.Contains(name,StringComparer.OrdinalIgnoreCase);}
+        {Player info;return name!=null && ByProcess.TryGetValue(name,out info) && info.Key==player;}
         internal void SetReadWindow(bool value)
         {
             lock(scanLock){readWindow=value;Invalidate();}
@@ -97,11 +130,16 @@ namespace DeskMate
         static List<Candidate> Candidates(string preferred)
         {
             var owners=new Dictionary<uint,Candidate>();
-            foreach(var pair in Processes)
+            foreach(var process in Process.GetProcesses())using(process)
             {
-                if(preferred!="auto" && pair.Key!=preferred)continue;
-                foreach(string exe in pair.Value)foreach(var p in Process.GetProcessesByName(exe))using(p)
-                    owners[(uint)p.Id]=new Candidate{Player=pair.Key,Process=exe,Title=""};
+                try
+                {
+                    string exe=process.ProcessName;Player player;
+                    if(ByProcess.TryGetValue(exe,out player) && (preferred=="auto" || player.Key==preferred))
+                        owners[(uint)process.Id]=new Candidate{Player=player.Key,Process=exe,Title=""};
+                }
+                catch(InvalidOperationException){} // Process exited during enumeration.
+                catch(System.ComponentModel.Win32Exception){}
             }
             var found=new List<Candidate>();if(owners.Count==0)return found;
             IntPtr front=GetForegroundWindow();
@@ -121,10 +159,23 @@ namespace DeskMate
         static bool ContainsAny(string text,params string[] fragments)
         { return fragments.Any(s=>text.IndexOf(s,StringComparison.OrdinalIgnoreCase)>=0); }
         static bool IsPlayerContext(string text)
-        {return ContainsAny(text,"playerbar","player-bar","player_bar","playbar","playingbar","playback","currenttrack","nowplaying","transport","playcontrol","progress","播放进度","播放控制","播放栏","当前播放");}
+        {return ContainsAny(text,"playerbar","player-bar","player_bar","bottom-player","playbar","playingbar","playback","currenttrack","nowplaying","now-playing","play-control","transport","playcontrol","progress","播放进度","播放控制","播放栏","当前播放");}
 
-        sealed class Node{public AutomationElement Element;public string Context;public int Parent,Depth;}
-        static List<PlayerLabel> Accessible(IntPtr hwnd)
+        // Soda 3.7's Windows playback bar exposes a title and an artist container in
+        // Electron versions that forward CSS class names through UI Automation.
+        internal static string SodaField(string classes,string context,string inherited)
+        {
+            if(!ContainsAny(context,"bottom-player"))return "";
+            foreach(string token in classes.Split(' '))
+            {
+                if(token=="vip-badge")return "ignore";
+                if(token=="title")return "title";
+                if(token=="desc")return "artist";
+            }
+            return inherited;
+        }
+        sealed class Node{public AutomationElement Element;public string Context,TrackField;public int Parent,Depth;}
+        static List<PlayerLabel> Accessible(IntPtr hwnd,string player,uint owner)
         {
             var labels=new List<PlayerLabel>();
             if(hwnd==IntPtr.Zero)return labels;
@@ -136,26 +187,36 @@ namespace DeskMate
                 request.Add(AutomationElement.ProcessIdProperty);request.Add(AutomationElement.IsOffscreenProperty);
                 var queue=new Queue<Node>();
                 AutomationElement root;using(request.Activate())root=AutomationElement.FromHandle(hwnd);
-                if(root==null)return labels;
-                int owner=root.Cached.ProcessId;
-                queue.Enqueue(new Node { Element=root,Context="",Parent=-1,Depth=0 });
+                if(root==null || (uint)root.Cached.ProcessId!=owner)return labels;
+                var allowed=new Dictionary<int,bool>{{root.Cached.ProcessId,true}};
+                queue.Enqueue(new Node { Element=root,Context="",TrackField="",Parent=-1,Depth=0 });
                 Stopwatch budget=Stopwatch.StartNew();
                 while(queue.Count>0 && labels.Count<175 && budget.ElapsedMilliseconds<600)
                 {
                     var n=queue.Dequeue();var c=n.Element.Cached;
-                    if(c.ProcessId!=owner || c.ControlType==ControlType.Edit ||
+                    bool owned;
+                    if(!allowed.TryGetValue(c.ProcessId,out owned))
+                    {
+                        try{using(var renderer=Process.GetProcessById(c.ProcessId))owned=IsProcess(player,renderer.ProcessName);}
+                        catch(ArgumentException){}
+                        catch(InvalidOperationException){}
+                        catch(System.ComponentModel.Win32Exception){}
+                        allowed[c.ProcessId]=owned;
+                    }
+                    if(!owned || c.ControlType==ControlType.Edit ||
                         c.ControlType==ControlType.List || c.ControlType==ControlType.DataGrid || c.ControlType==ControlType.Tree)continue;
                     string id=c.AutomationId??"",name=c.Name??"", cls=c.ClassName??"";
                     string kind=c.ControlType.ProgrammaticName.Replace("ControlType.","");
                     string context=IsPlayerContext(id+" "+cls+" "+name)?id+" "+cls+" "+name:n.Context;
                     if(context.Length>180)context=context.Substring(0,180);
-                    int index=labels.Count;labels.Add(new PlayerLabel(id,name.Length>250?"":name,kind,context,n.Parent,!c.IsOffscreen));
+                    string trackField=player=="soda"?SodaField(cls,context,n.TrackField):"";
+                    int index=labels.Count;labels.Add(new PlayerLabel(id,name.Length>250?"":name,kind,context,n.Parent,!c.IsOffscreen){TrackField=trackField});
                     if(n.Depth>=10 || c.ControlType==ControlType.Text)continue;
                     var walker=TreeWalker.ControlViewWalker;
                     var child=walker.GetFirstChild(n.Element,request);
                     for(int i=0;child!=null && i<35 && labels.Count+queue.Count<180 && budget.ElapsedMilliseconds<600;i++)
                     {
-                        queue.Enqueue(new Node { Element=child,Parent=index,Context=context,Depth=n.Depth+1 });
+                        queue.Enqueue(new Node { Element=child,Parent=index,Context=context,TrackField=trackField,Depth=n.Depth+1 });
                         child=walker.GetNextSibling(child,request);
                     }
                 }
@@ -163,12 +224,13 @@ namespace DeskMate
             return labels;
         }
         static bool Content(string s)
-        {return !String.IsNullOrWhiteSpace(s)&&s.Length<=180&&!Brands.Any(b=>s.Equals(b,StringComparison.OrdinalIgnoreCase))&&!SingleTime.IsMatch(s)&&
+        {return !String.IsNullOrWhiteSpace(s)&&s.Length<=180&&!Brands.Contains(s)&&!SingleTime.IsMatch(s)&&
             !ContainsAny(s,"听我想听","就是歌多","音乐总有新玩法","发现好音乐","搜索音乐");}
         static string[] Caption(string player,string caption)
         {
             string s=caption.Trim();
-            var parts=Regex.Split(s,@"\s+(?:-|–|—|\|)\s+").Select(t=>t.Trim()).Where(t=>!Brands.Any(b=>t.Equals(b,StringComparison.OrdinalIgnoreCase))).ToList();
+            if(player!="netease" && player!="qq" && player!="kugou")return new[]{"",""};
+            var parts=Regex.Split(s,@"\s+(?:-|–|—|\|)\s+").Select(t=>t.Trim()).Where(t=>!Brands.Contains(t)).ToList();
             if(parts.Count!=2||!parts.All(Content))return new[]{"",""};
             return player=="kugou"?new[]{parts[1],parts[0]}:new[]{parts[0],parts[1]};
         }
@@ -227,11 +289,24 @@ namespace DeskMate
             var elapsedTimes=new FieldValues<double>();var endTimes=new FieldValues<double>();
             var states=new FieldValues<bool>();
             double at=-1,total=-1;
+            bool strict=player!="netease" && player!="qq" && player!="kugou";
             var timeGroups=new Dictionary<int,List<Tuple<double,bool>>>();
             foreach(var item in labels)
             {
                 string text=item.Text.Trim(), id=item.Id, context=item.Context;
                 if(text.Length==0 || text.Length>250)continue;
+                bool playerContext=IsPlayerContext(context);
+                bool transport=playerContext||ContainsAny(id,"playpause","btnplay","playbtn","pausebtn","btnpause","playbutton","pausebutton");
+                // A library view may also expose song titles, artists, preview buttons
+                // and clock-like text. Only consume fields tied to the current track.
+                if(strict && !playerContext && !ContainsAny(id,"currenttitle","currentartist","currenttrack","currentlyplaying","currenttime","nowplaying"))
+                    continue;
+                if(item.TrackField=="ignore")continue;
+                if((item.Kind=="Text" || item.Kind=="Hyperlink") && Content(text) && !TimePair.IsMatch(text))
+                {
+                    if(item.TrackField=="title")titles.Add(text,item.OnScreen);
+                    if(item.TrackField=="artist")artists.Add(text,item.OnScreen);
+                }
                 var a=ArtistLabel.Match(text);var n=SongLabel.Match(text);
                 if(a.Success && Content(a.Groups[1].Value))artists.Add(a.Groups[1].Value.Trim(),item.OnScreen);
                 else if(n.Success && Content(n.Groups[1].Value))
@@ -243,7 +318,6 @@ namespace DeskMate
                     (IsPlayerContext(context) && id.Equals("title",StringComparison.OrdinalIgnoreCase))) && Content(text)) titles.Add(text,item.OnScreen);
                 else if((ContainsAny(id,"singername","artistname","currentartist","songartist","tracksinger") ||
                     (IsPlayerContext(context) && (id.Equals("artist",StringComparison.OrdinalIgnoreCase)||id.Equals("singer",StringComparison.OrdinalIgnoreCase)))) && Content(text))artists.Add(text,item.OnScreen);
-                bool transport=IsPlayerContext(context)||ContainsAny(id,"playpause","btnplay","playbtn","pausebtn","btnpause","playbutton","pausebutton");
                 if(item.Kind=="Button" && transport)
                 {
                     if(Regex.IsMatch(text,@"^(?:暂停(?:播放)?|Pause)(?:\s*[（(].*[）)])?$",RegexOptions.IgnoreCase))states.Add(true,item.OnScreen);
@@ -311,31 +385,28 @@ namespace DeskMate
         }
         MediaReading Scan(string preferred,int revision)
         {
-            var choices=Candidates(preferred);var reads=new List<MediaReading>();
+            var choices=Candidates(preferred);var reads=new Dictionary<string,MediaReading>();
             var lyricsWindows=new Dictionary<string,Candidate>();
-            foreach(var group in choices.GroupBy(w=>w.Player).Take(3))
+            foreach(var group in choices.GroupBy(w=>w.Player))
             {
                 var c=group.FirstOrDefault(w=>!w.LyricsWindow)??group.First();
                 var dedicated=group.FirstOrDefault(w=>w.LyricsWindow);if(dedicated!=null)lyricsWindows[c.Player]=dedicated;
-                var reading=Parse(c.Player,c.Process,c.Title,Accessible(c.Hwnd),c.LyricsWindow);
+                var reading=Parse(c.Player,c.Process,c.Title,Accessible(c.Hwnd,c.Player,c.Pid),c.LyricsWindow);
                 var desk=group.FirstOrDefault(w=>w.LyricsWindow && w!=c);
                 if(reading.LiveLyric.Length==0 && desk!=null)
                 {
-                    string sung=Lyric(Accessible(desk.Hwnd),true,reading.Title,reading.Artist);
+                    string sung=Lyric(Accessible(desk.Hwnd,c.Player,desk.Pid),true,reading.Title,reading.Artist);
                     if(sung.Length>0)reading=new MediaReading(reading.Title,reading.Artist,reading.AppId,"window",reading.PlayerKey,reading.Position,
                         reading.Duration,reading.Playing,reading.StateKnown,reading.HasTimeline,reading.SampledUtc,reading.Rate,reading.Diagnostic,sung);
                 }
-                reads.Add(reading);
+                MediaReading prior;
+                if(previousRevision==revision && previous.TryGetValue(c.Player,out prior))
+                    reading=WithObservedProgress(reading,prior);
+                reads.Add(c.Player,reading);
             }
-            MediaReading selected=reads.OrderByDescending(r=>r.Playing && r.StateKnown).ThenByDescending(r=>r.HasTimeline)
+            previous=reads;previousRevision=revision;
+            MediaReading selected=reads.Values.OrderByDescending(r=>r.Playing && r.StateKnown).ThenByDescending(r=>r.HasTimeline)
                 .ThenByDescending(r=>r.Title.Length>0).FirstOrDefault();
-            if(selected!=null && previous!=null && selected.HasTimeline && previous.HasTimeline && !selected.StateKnown &&
-                selected.Title==previous.Title && selected.AppId==previous.AppId && selected.Duration==previous.Duration)
-            {
-                double traveled=(selected.Position-previous.Position).TotalSeconds, elapsed=(selected.SampledUtc-previous.SampledUtc).TotalSeconds;
-                if(traveled>0 && elapsed>0 && Math.Abs(traveled-elapsed)<1.6)
-                    selected=new MediaReading(selected.Title,selected.Artist,selected.AppId,"window",selected.PlayerKey,selected.Position,selected.Duration,true,true,true,selected.SampledUtc,1,"",selected.LiveLyric);
-            }
             Candidate capture;
             if(selected!=null && selected.LiveLyric.Length==0 && readWindow && lyricsWindows.TryGetValue(selected.PlayerKey,out capture))
             {
@@ -345,7 +416,16 @@ namespace DeskMate
                 selected=new MediaReading(selected.Title,selected.Artist,selected.AppId,selected.Source,selected.PlayerKey,selected.Position,selected.Duration,
                     selected.Playing,selected.StateKnown,selected.HasTimeline,selected.SampledUtc,selected.Rate,selected.Diagnostic,line,line==""?"":"ocr",diag);
             }
-            previous=selected;return selected;
+            return selected;
+        }
+        internal static MediaReading WithObservedProgress(MediaReading current,MediaReading prior)
+        {
+            if(current.StateKnown || !current.HasTimeline || !prior.HasTimeline || current.Title!=prior.Title ||
+                current.Artist!=prior.Artist || current.AppId!=prior.AppId || current.Duration!=prior.Duration)return current;
+            double traveled=(current.Position-prior.Position).TotalSeconds,elapsed=(current.SampledUtc-prior.SampledUtc).TotalSeconds;
+            if(traveled<=0 || elapsed<=0 || elapsed>8 || Math.Abs(traveled-elapsed)>=1.6)return current;
+            return new MediaReading(current.Title,current.Artist,current.AppId,"window",current.PlayerKey,current.Position,current.Duration,
+                true,true,true,current.SampledUtc,1,"",current.LiveLyric);
         }
     }
 }

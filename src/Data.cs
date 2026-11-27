@@ -17,6 +17,7 @@ namespace DeskMate
         public bool HeldByPet;
         public int PaperTone = -1;
         public string PaperTimeKey;
+        public string WrittenTimeAtChoice;
     }
 
     public class BagItem

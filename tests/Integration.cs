@@ -448,6 +448,12 @@ internal static partial class Integration
             Elements<TextBox>().Single().Text=="待会继续写的草稿", "Timed pet memo preserves an open draft while refreshing its list");
         app.Desk.AcceptPetDrop(new DataObject(DataFormats.Text,new string('文',241)));
         Check(app.Data.Notes.Count==2,"Oversized dropped note refused intact");
+        app.Desk.AcceptPetDrop(new DataObject(DataFormats.UnicodeText,"拿快递，半小时后提醒我"));
+        Check(app.Data.Notes[0].Text=="拿快递，半小时后提醒我" && app.Data.Notes[0].HeldByPet &&
+            app.Data.Notes[0].DueUtc>DateTime.UtcNow.AddMinutes(29).Ticks,"Dropped natural-language reminders keep the original text and deadline");
+        app.Desk.AcceptPetDrop(new DataObject(DataFormats.UnicodeText,"回家时提醒我拿书"));
+        Check(app.Data.Notes[0].Text=="回家时提醒我拿书" && app.Data.Notes[0].DueUtc==0 &&
+            Elements<TextBox>().Single().Text=="待会继续写的草稿","An uncertain drop saves the text without scheduling or replacing the open draft");
         var url=new DataObject(DataFormats.UnicodeText,"https://example.net/path");
         app.Desk.AcceptPetDrop(url); app.Desk.AcceptPetDrop(url);
         string sample=Path.Combine(stateDir,"collection.txt");

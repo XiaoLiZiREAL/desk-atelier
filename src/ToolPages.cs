@@ -249,18 +249,18 @@ namespace DeskMate
                 return;
             }
             if (text.Length>300) { app.React("wave","文字太长，便签正文最多 240 个字。"); return; }
-            Match timed=Regex.Match(text,@"^([0-9]+)\s*分钟后\s*提醒我\s*(.*)$",RegexOptions.Singleline);
-            long due=0;
-            int minutes=0;
-            if (timed.Success)
-            {
-                if (!Int32.TryParse(timed.Groups[1].Value,out minutes) || minutes<1 || minutes>10080)
-                { app.React("wave","提醒时间可以设在 1 到 10080 分钟后。"); return; }
-                due=DateTime.UtcNow.AddMinutes(minutes).Ticks;
-                text=timed.Groups[2].Value.Trim();
-            }
+            var schedule=PaperTime.Read(text,DateTime.Now);
+            long due=schedule.Error==null?schedule.Utc:0;
+            // Keep the saved body of the original quick-drop command compatible.
+            var quick=Regex.Match(text,@"^[0-9]+\s*分钟后\s*提醒我\s*(.+)$",RegexOptions.Singleline);
+            if(due>0 && quick.Success)text=quick.Groups[1].Value.Trim();
             string noteIssue=AddNote(text,due);
-            PetDropResult(noteIssue==null,"notes",noteIssue??(due==0?"已记进便签册。": "记好了，"+minutes+" 分钟后提醒你。"));
+            if(noteIssue==null && due>0 && !quick.Success){
+                var note=app.Data.Notes[0];note.HeldByPet=true;note.PaperTimeKey=schedule.Key;
+            }
+            string receipt=due>0?"记好了，"+new DateTime(due,DateTimeKind.Utc).ToLocalTime().ToString("M/d HH:mm")+" 提醒你。":
+                schedule.Error!=null?"便签已保存，点纸上的小钟确认提醒时间。":"已记进便签册。";
+            PetDropResult(noteIssue==null,"notes",noteIssue??receipt);
         }
 
         void PetDropResult(bool changed,string destination,string message)
