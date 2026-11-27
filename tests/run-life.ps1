@@ -20,7 +20,7 @@ if([Environment]::Is64BitOperatingSystem -and ![Environment]::Is64BitProcess){$m
 foreach($name in 'System.Runtime','System.Runtime.InteropServices.WindowsRuntime','System.Collections'){$opts+="/r:$fx\$name.dll"}
 foreach($name in 'Windows.Foundation','Windows.Media','Windows.Storage'){$opts+="/r:$metadata\$name.winmd"}
 $exe=Join-Path $folder 'LifeChecks.exe'
-& "$fx\csc.exe" @opts "/out:$exe" (Join-Path $PSScriptRoot 'LifeChecks.cs') (Join-Path $PSScriptRoot 'ContinuationChecks.cs') (Join-Path $PSScriptRoot 'ProjectChecks.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
+& "$fx\csc.exe" @opts "/out:$exe" (Join-Path $PSScriptRoot 'LifeChecks.cs') (Join-Path $PSScriptRoot 'ContinuationChecks.cs') (Join-Path $PSScriptRoot 'ProjectChecks.cs') (Join-Path $PSScriptRoot 'OutfitChecks.cs') (Join-Path $PSScriptRoot 'NativeTestSong.cs')
 if($LASTEXITCODE){throw 'Life UI verification harness failed to compile'}
 if(!$CompileOnly){
     $steveReference=(Resolve-Path (Join-Path $PSScriptRoot '../src/assets')).Path

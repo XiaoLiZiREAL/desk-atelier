@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
+using System.Windows.Media.Imaging;
 using DeskMate;
 
 internal static class ActionPackChecks
@@ -28,6 +30,27 @@ internal static class ActionPackChecks
         return path;
     }
     static void Check(bool condition,string text){if(!condition)throw new Exception(text);Console.WriteLine("PASS "+text);}
+    static void CheckEditedGuitarPack(Studio app,string folder,bool alteredStand)
+    {
+        string path=Path.Combine(folder,alteredStand?"other-stand.zip":"original-stand.zip");
+        using(var file=File.Create(path))
+        using(var zip=new ZipArchive(file,ZipArchiveMode.Create)){
+            Entry(zip,"pet.json",Encoding.UTF8.GetBytes("{\"displayName\":\"自定义睦\",\"spritesheetPath\":\"atlas.png\"}"));
+            Entry(zip,"atlas.png",File.ReadAllBytes(app.Asset("mutsumi.png")));
+            // The modified game is enough to give the pack its own identity.
+            Entry(zip,"actions/game.png",File.ReadAllBytes(app.Asset("motion-rem-game.png")));
+            string art=alteredStand?"motion-mutsumi-focus.png":"motion-mutsumi-guitarbridge.png";
+            Entry(zip,"actions/guitarbridge.png",File.ReadAllBytes(app.Asset(art)));
+        }
+        string role=app.ImportCompanion(path);
+        Check(role.StartsWith("custom-"),"edited Mutsumi pack registers independently");
+        app.Data.Character=role;app.Pet.Sync();
+        var type=typeof(PetWindow);
+        const BindingFlags flags=BindingFlags.NonPublic|BindingFlags.Instance;
+        var frames=(BitmapSource[])type.GetMethod("ActionFrames",flags).Invoke(app.Pet,new object[]{role,"guitarbridge"});
+        var drawing=type.GetMethod("FloorDrawing",flags).Invoke(app.Pet,new object[]{"guitarbridge",frames[5]});
+        Check(alteredStand?drawing==null:drawing!=null,alteredStand?"custom stand layout is not cut at the built-in coordinates":"matching guitar stand survives an unrelated action edit");
+    }
     [STAThread]
     public static int Main(string[] args)
     {
@@ -37,7 +60,7 @@ internal static class ActionPackChecks
             Environment.SetEnvironmentVariable("DESKATELIER_DATA",folder);
             var app=new Studio(folder);app.ExtractArt();
             if(args.Length>1 && !args[1].StartsWith("--"))Check(app.ImportCompanion(Path.GetFullPath(args[1]))=="steve","distributed Steve pack matches the built-in rig");
-            foreach(string role in new[]{"hitori","rem","kurisu"}){
+            foreach(string role in new[]{"hitori","rem","kurisu","mutsumi"}){
                 int flag=Array.IndexOf(args,"--"+role);
                 if(flag>=0)Check(app.ImportCompanion(Path.GetFullPath(args[flag+1]))==role,"distributed "+role+" pack matches its built-in artwork");
             }
@@ -51,6 +74,11 @@ internal static class ActionPackChecks
             bool rejected=false;
             try{app.ImportCompanion(Make(app,folder,"wrong-size",true,false,true));}catch(InvalidDataException){rejected=true;}
             Check(rejected,"invalid living animation rejected before installing");
+            app.StartStudio(null);
+            try{
+                CheckEditedGuitarPack(app,folder,false);
+                CheckEditedGuitarPack(app,folder,true);
+            }finally{app.Quit();}
             return 0;
         }
         catch(Exception error){Console.Error.WriteLine(error);return 1;}

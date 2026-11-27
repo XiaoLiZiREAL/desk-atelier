@@ -13,8 +13,8 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.8.1.0")]
-[assembly: AssemblyFileVersion("1.8.1.0")]
+[assembly: AssemblyVersion("1.9.0.0")]
+[assembly: AssemblyFileVersion("1.9.0.0")]
 
 namespace DeskMate
 {
@@ -87,6 +87,7 @@ namespace DeskMate
                     case "steve": return "史蒂夫";
                     case "rem": return "蕾姆";
                     case "hitori": return "后藤独";
+                    case "mutsumi": return "若叶睦";
                     default: return CustomName(Data.Character) ?? "伙伴";
                 }
             }
@@ -111,6 +112,18 @@ namespace DeskMate
             SessionEnding += delegate { Quit(); };
         }
         public string Asset(string filename) { return LookupCustomAsset(filename) ?? Path.Combine(assetFolder,filename); }
+        public string CharacterArtId(string role)
+        {
+            return role=="mutsumi" && Data.MutsumiOutfit=="stage"?"mutsumi-stage":role;
+        }
+        internal void WearMutsumiOutfit(string outfit)
+        {
+            if(Data.Character!="mutsumi" || (outfit!="stage" && outfit!="uniform") || Data.MutsumiOutfit==outfit)return;
+            Data.MutsumiOutfit=outfit;
+            Save();Pet.Sync();
+            if(Desk!=null && Desk.IsVisible && (Desk.CurrentTool=="settings" || Desk.CurrentTool=="room" || Desk.CurrentTool=="gift"))
+                Desk.RefreshPage();
+        }
         public void ExtractArt()
         {
             Directory.CreateDirectory(assetFolder);
@@ -247,6 +260,10 @@ namespace DeskMate
             if(Data.Character=="hitori")
                 lines=action=="tea"?new[]{"谢、谢谢。我两只手拿比较稳。","等茶凉一点，我再练一遍副歌。"}:
                     new[]{"刚才那段……你听见了吗？","我把音量调小一点。这样可以吗？","等、等一下，这次我能弹顺的。"};
+            if(Data.Character=="mutsumi")
+                lines=action=="tea"?new[]{"嗯。一起喝吧。","还热。慢一点。"}:
+                    action=="wave"?new[]{"嗯，我在听。","……你来了。"}:
+                    new[]{"再弹一遍。","刚才那两个音，你听到了吗？","新叶子长出来了。"};
             int pick = (previousLine + 1 + random.Next(lines.Length - 1)) % lines.Length;
             previousLine = pick;
             string words = lines[pick];

@@ -89,7 +89,12 @@ internal static class DuetChecks
     static void Start(string id,bool natural)
     {
         app.Data.Character=id;pet.Sync();Call("FinishPerformance");
-        if(natural){app.Data.GuitarRoutine=6;Call("Ambient");}
+        if(natural){
+            if(id=="mutsumi" && app.Data.MutsumiOutfit=="stage")app.Data.MutsumiStageRoutine=6;
+            else if(id=="mutsumi")app.Data.MutsumiRoutine=6;
+            else app.Data.GuitarRoutine=6;
+            Call("Ambient");
+        }
         else Call("StartVisit",true);
         scene=Read<object>(pet,"visitor");
         Need(scene!=null && Read<Window>(scene,"Layer").IsVisible && Read<bool>(scene,"Independent"),id+" starts a visible unattended visit");
@@ -147,6 +152,72 @@ internal static class DuetChecks
         Advance(150);Need(actor.Source!=null && !MatchesStep(actor,guestSteps[1],side>0),"missing optional authored footsteps fall back to the base walk cycle");
         Advance(14300);Need((Store.Load().DuetTeaTurns&turn)==0,"tea completion restores story eligibility");
     }
+    static void Rehearsal(string host,bool capture)
+    {
+        Start(host,true);
+        bool mHost=host=="mutsumi";var duet=Read<object>(scene,"Duet");
+        Need(duet!=null && Read<string>(duet,"Guest")==(mHost?"hitori":"mutsumi"),host+" autonomously meets her guitar partner");
+        var actor=Read<Image>(scene,"Actor");var window=Read<Window>(scene,"Layer");
+        var mutsumi=mHost?pet.LiveSprite:actor;var bocchi=mHost?actor:pet.LiveSprite;
+        var phrase=Read<BitmapSource[]>(duet,"MutsumiPhrase");var answer=Read<BitmapSource[]>(duet,"Bocchi");
+        bool partnerOnRight=mHost?Read<double>(scene,"Side")>0:Read<double>(scene,"Side")<0;
+        var drawings=(BitmapSource[])pet.GetType().GetMethod("ActionFrames",fields).Invoke(pet,new object[]{"mutsumi",partnerOnRight?"duetphrase":"duetleft"});
+        Need(phrase[0]==drawings[0] && phrase[4]==drawings[4],"the host and visitor use the original guitar art facing their partner");
+        Advance(3440);Need(mutsumi.Source==phrase[0] && bocchi.Source==answer[1],"Bocchi hesitates and Mutsumi watches her fretting hand");
+        Advance(4670);Need(mutsumi.Source==phrase[6] && bocchi.Source==answer[1],"Mutsumi plays the first note alone");
+        Advance(5010);Need(mutsumi.Source==phrase[7] && bocchi.Source==answer[1],"Mutsumi lifts her picking hand between the notes");
+        Advance(5320);Need(mutsumi.Source==phrase[8] && bocchi.Source==answer[1],"Mutsumi plays the second note alone");
+        Advance(6150);Need(mutsumi.Source==phrase[4],"Mutsumi opens her hand to invite an answer");
+        Advance(7550);Need(mutsumi.Source==phrase[3] && bocchi.Source==answer[2],"Mutsumi keeps her strings muted while Bocchi answers");
+        Advance(8560);Need(mutsumi.Source==phrase[3] && bocchi.Source==answer[4],"Bocchi moves through her own phrase during the hold");
+        Advance(9900);Need(mutsumi.Source==phrase[5] && bocchi.Source==answer[5],"Mutsumi nods when Bocchi completes her phrase");
+        CheckSpacing(actor,3440);CheckSpacing(actor,5320);CheckSpacing(actor,8560);
+        if(capture){
+            string prefix=host+(app.Data.MutsumiOutfit=="stage"?"-stage":"");
+            var dir=Directory.CreateDirectory(Path.Combine(output,prefix+"-rehearsal")).FullName;
+            for(int ms=0;ms<14300;ms+=125){
+                Advance(ms);Capture(window,Path.Combine(dir,ms.ToString("D5")+".png"));
+            }
+        }
+        Call("PlayPaperAction",false);
+        Need(!window.IsVisible && (Store.Load().DuetTeaTurns&4)==0,"interrupted rehearsal remains eligible");
+        Start(host,false);Need(Read<object>(scene,"Duet")!=null,"the next visit can replay the unfinished rehearsal");
+        Advance(14300);Need((Store.Load().DuetTeaTurns&4)!=0,"only a completed rehearsal spends the story turn");
+        Start(host,false);Need(Read<object>(scene,"Duet")==null,"rehearsal alternates with a quiet tea visit");
+        Advance(14300);
+        Need((Store.Load().DuetTeaTurns&4)==0,"both partners can schedule another rehearsal after tea");
+    }
+    static void CheckHostRotation()
+    {
+        foreach(string other in new[]{"steve","mutsumi"}){
+            Start("hitori",false);
+            Need(Read<string>(Read<object>(scene,"Duet"),"Guest")==other,"Bocchi chooses her next story partner: "+other);
+            Advance(14300);
+            Start(other,false);Need(Read<object>(scene,"Duet")==null,"the other host can finish their tea independently");Advance(14300);
+            app.Data=Store.Load();Start("hitori",false);
+            Need(Read<object>(scene,"Duet")==null,"the other host cannot consume Bocchi's own tea visit");Advance(14300);
+        }
+        Need(Store.Load().HitoriVisit==HitoriVisitTurn.Pick,"switching hosts still completes an entire four-visit cycle");
+        app.Data.HitoriVisit=HitoriVisitTurn.FromOldSave;app.Data.DuetTeaTurns=1;app.Save();app.Data=Store.Load();
+        Start("steve",false);Advance(14300);Start("hitori",false);
+        Need(Read<object>(scene,"Duet")==null,"legacy tea eligibility is migrated before Steve spends the old flag");
+        Advance(14300);Need(Store.Load().HitoriVisit==HitoriVisitTurn.Rehearsal,"the first new story after a legacy tea is rehearsal");
+    }
+    static void CheckDuetClothes(bool capture)
+    {
+        app.Data.MutsumiOutfit="stage";app.Data.HitoriVisit=HitoriVisitTurn.Rehearsal;app.Save();
+        Start("hitori",false);
+        Need(Read<string>(scene,"GuestArtId")=="mutsumi-stage","Bocchi's visitor arrives in Mutsumi's remembered stage costume");
+        var layer=Read<Window>(scene,"Layer");
+        app.Data.MutsumiOutfit="uniform";pet.Sync();
+        Need(!layer.IsVisible && Read<object>(pet,"visitor")==null && app.Data.HitoriVisit==HitoriVisitTurn.Rehearsal,
+            "changing a visitor's clothes releases its drawings without spending the unfinished story");
+        Start("hitori",false);Need(Read<string>(scene,"GuestArtId")=="mutsumi","the next visit uses the changed uniform selection");
+        Call("EndVisit");
+        app.Data.MutsumiOutfit="stage";app.Data.DuetTeaTurns &= ~4;app.Save();pet.Sync();
+        Rehearsal("hitori",capture);Rehearsal("mutsumi",capture);
+        app.Data.MutsumiOutfit="uniform";app.Save();pet.Sync();
+    }
     [STAThread] public static int Main(string[] args)
     {
         output=Path.GetFullPath(args[0]);string state=Path.Combine(output,"state-"+Guid.NewGuid().ToString("N"));
@@ -159,6 +230,12 @@ internal static class DuetChecks
             Story("hitori","steve",true,frames);Story("kurisu","rem",false,frames);
             Call("Position",32,64);
             Story("steve","hitori",false,false);Story("rem","kurisu",false,false);
+            Need(Store.Load().HitoriVisit==HitoriVisitTurn.Rehearsal,"Bocchi's next partner survives a save");
+            Rehearsal("hitori",frames);
+            Need(Store.Load().HitoriVisit==HitoriVisitTurn.Pick,"Bocchi will visit Steve again after rehearsal and tea");
+            Rehearsal("mutsumi",frames);
+            CheckHostRotation();
+            CheckDuetClothes(frames);
             Start("steve",false);Advance(5400);
             var guest=Read<Window>(scene,"Layer");var d=Read<object>(scene,"Duet");
             var old=Read<Transform>(d,"PreviousTransform");Call("PlayPaperAction",false);

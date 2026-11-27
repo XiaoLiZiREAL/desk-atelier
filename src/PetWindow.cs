@@ -33,12 +33,14 @@ namespace DeskMate
         private Drawing.Icon trayIcon;
         private IntPtr handle;
         private Forms.ToolStripMenuItem visibilityItem, quietItem, topItem, musicItem;
+        private Forms.ToolStripMenuItem outfitItem, uniformItem, stageItem;
+        const string UniformLabel="月之森制服", StageLabel="红贝雷帽演出服";
         private bool manuallyHidden, fullscreenHidden, pressing, dragging, disposed;
         private NativePoint pressPoint, pressWindow;
         private long effectUntil, speechUntil, ambientAt, shellCheckAt, pendingClickAt, nearbySince;
         private long shownSince;
         private int row, currentRow = -1, currentFrame = -1;
-        private string character;
+        private string character, currentArtId;
         private double scale;
         private VisitScene visitor;
         private string noticePage = "notes";
@@ -70,6 +72,7 @@ namespace DeskMate
             ToolTipService.SetInitialShowDelay(sprite, 1000);
             InstallAttachments(panel);
             panel.Children.Add(parkedProp);
+            panel.Children.Add(parkedMusicGuitar);
             panel.Children.Add(sprite);
 
             bubble.Background = Ui.Color("#FCFFFFFF");
@@ -133,6 +136,10 @@ namespace DeskMate
             musicItem.CheckOnClick=true;
             AddTray("便签",delegate{app.Open("notes");});
             AddTray("礼物",delegate{app.Open("gift");});
+            outfitItem=new Forms.ToolStripMenuItem("换衣服");menu.Items.Add(outfitItem);
+            uniformItem=new Forms.ToolStripMenuItem(UniformLabel,null,delegate{app.WearMutsumiOutfit("uniform");});
+            stageItem=new Forms.ToolStripMenuItem(StageLabel,null,delegate{app.WearMutsumiOutfit("stage");});
+            outfitItem.DropDownItems.Add(uniformItem);outfitItem.DropDownItems.Add(stageItem);
             menu.Items.Add(new Forms.ToolStripSeparator());
             AddTray("伙伴设置",delegate{app.Open("settings");});
             var display=new Forms.ToolStripMenuItem("桌面");menu.Items.Add(display);
@@ -159,17 +166,17 @@ namespace DeskMate
             if(!IsLoaded){Dispatcher.BeginInvoke((Action)delegate{if(!disposed)OpenQuickMenu(false);},DispatcherPriority.Loaded);return;}
             OpenQuickMenu(false);
         }
-        void OpenQuickMenu(bool atPointer)
+        void OpenQuickMenu(bool atPointer,bool wardrobe=false)
         {
             OpeningTool();
             if(quickMenu!=null)quickMenu.IsOpen=false;
-            quickMenu=CreateOverlayMenu();quickMenu.PlacementTarget=sprite;
+            quickMenu=CreateOverlayMenu(wardrobe);quickMenu.PlacementTarget=sprite;
             quickMenu.Placement=atPointer?System.Windows.Controls.Primitives.PlacementMode.MousePoint:System.Windows.Controls.Primitives.PlacementMode.Left;
             quickMenu.IsOpen=true;
             quickMenu.Closed+=delegate { UpdateFlyoutDismissal(); };
             UpdateFlyoutDismissal();
         }
-        ContextMenu CreateOverlayMenu()
+        ContextMenu CreateOverlayMenu(bool wardrobe=false)
         {
             var popup=new ContextMenu{FontFamily=words.FontFamily,FontSize=13};
             var divider=new Separator();
@@ -178,6 +185,13 @@ namespace DeskMate
                 var theme=quickMenuTheme.Value;
                 popup.Style=(Style)theme[typeof(ContextMenu)];
                 divider.Style=(Style)theme["MenuDivider"];
+            }
+            if(wardrobe && character=="mutsumi"){
+                AddOverlay(popup,"换衣服","\uE72B",delegate{QueueMenu(false);});
+                popup.Items.Add(divider);
+                AddOutfitChoice(popup,"uniform",UniformLabel);
+                AddOutfitChoice(popup,"stage",StageLabel);
+                return popup;
             }
             AddOverlay(popup,"番茄钟","\uE916",delegate{app.Open("focus");});
             var music=AddOverlay(popup,"听音乐","\uE8D6",null);
@@ -191,11 +205,23 @@ namespace DeskMate
             music.Unchecked+=changeMusic;
             AddOverlay(popup,"便签","\uE70B",delegate{app.Open("notes");});
             AddOverlay(popup,"礼物","\uE7B8",delegate{app.Open("gift");});
+            if(character=="mutsumi")AddOverlay(popup,"换衣服","\uE790",delegate{QueueMenu(true);});
             popup.Items.Add(divider);
             AddOverlay(popup,"伙伴设置","\uE713",delegate{app.Open("settings");});
             AddOverlay(popup,"收起桌宠","\uE921",ToggleVisibility);
             AddOverlay(popup,"退出","\uE8BB",delegate{app.Quit();});
             return popup;
+        }
+        void QueueMenu(bool wardrobe)
+        {
+            // WPF dismisses the clicked menu after its Click handler. Replace it afterwards.
+            Dispatcher.BeginInvoke((Action)delegate{if(!disposed && !app.Exiting)OpenQuickMenu(false,wardrobe);},DispatcherPriority.Input);
+        }
+        void AddOutfitChoice(ContextMenu popup,string outfit,string label)
+        {
+            bool active=app.Data.MutsumiOutfit==outfit;
+            var choice=AddOverlay(popup,label,active?"\uE73E":"",delegate{app.WearMutsumiOutfit(outfit);});
+            System.Windows.Automation.AutomationProperties.SetHelpText(choice,active?"当前穿着":"换上"+label);
         }
         static MenuItem AddOverlay(ContextMenu owner,string label,string glyph,Action action)
         {
@@ -213,6 +239,8 @@ namespace DeskMate
             quietItem.Checked = app.Data.Quiet;
             topItem.Checked = app.Data.AlwaysOnTop;
             musicItem.Checked = app.Data.SingAlongEnabled;
+            outfitItem.Visible=character=="mutsumi";
+            uniformItem.Checked=app.Data.MutsumiOutfit!="stage";stageItem.Checked=!uniformItem.Checked;
         }
 
         private void ToggleQuiet() { app.Data.Quiet = !app.Data.Quiet; app.Save(); Sync(); }
@@ -248,6 +276,7 @@ namespace DeskMate
                 sprite.Width = 152 * scale;
                 sprite.Height = sprite.Width * 208 / 192;
                 parkedProp.Width=sprite.Width;parkedProp.Height=sprite.Height;
+                parkedMusicGuitar.Width=sprite.Width;parkedMusicGuitar.Height=sprite.Height;
                 Width = Math.Max(sprite.Width + 2 * AttachmentGutter(), 222);
                 Height = sprite.Height + 84;
                 bubble.MaxWidth = Width - 14;
@@ -255,13 +284,19 @@ namespace DeskMate
                 if (handle != IntPtr.Zero) Dispatcher.BeginInvoke((Action)ClampCurrent, DispatcherPriority.Loaded);
             }
             string wanted = app.Data.Character;
-            if (character != wanted)
+            string wantedArt=app.CharacterArtId(wanted);
+            if(visitor!=null && visitor.GuestArtId!=app.CharacterArtId(visitor.Guest))EndVisit();
+            if (character != wanted || currentArtId != wantedArt)
             {
                 EndVisit();
+                StopSongMovement();
+                if(pressing || dragging){pressing=dragging=false;sprite.ReleaseMouseCapture();}
+                pendingClickAt=nearbySince=0;
                 ForgetPerformance();
-                ReleaseCharacterActions(character);
-                if (character != null && character != "rem" && character != "kurisu") art.Remove(character);
+                ReleaseCharacterActions(currentArtId);
+                if (currentArtId != null && currentArtId != "rem" && currentArtId != "kurisu") art.Remove(currentArtId);
                 character = wanted;
+                currentArtId=wantedArt;
                 frames = LoadArt(wanted);
                 currentFrame = currentRow = -1;
                 row = Idle;
@@ -289,6 +324,7 @@ namespace DeskMate
 
         private BitmapSource[][] LoadArt(string key)
         {
+            key=app.CharacterArtId(key);
             BitmapSource[][] result;
             if (art.TryGetValue(key, out result)) return result;
             var bitmap = new BitmapImage();
@@ -469,6 +505,8 @@ namespace DeskMate
             timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null ? 34 : 80);
             RefreshKaraokeOverlay();
             if (!IsVisible) { EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            parkedProp.Visibility=interrupted!=null && interrupted.Bridge=="guitarbridge" && (PlayingGuitarToMusic || MusicPaperGuitar)
+                ?Visibility.Hidden:Visibility.Visible;
             if(AdvanceBridge(now))return;
             if(dragging && carriedPose!=null){ShowPose(carriedPose);return;}
             if (now >= speechUntil && bubble.Visibility == Visibility.Visible) bubble.Visibility = Visibility.Collapsed;
@@ -484,13 +522,14 @@ namespace DeskMate
             {
                 if(independentPerformance && (app.Data.Quiet || MusicPlaying || ToolOpen() ||
                     (app.FocusActive && !app.FocusPaused && performance!="focus"))){
-                    InterruptPerformance();if(AdvanceBridge(now))return;
+                    InterruptPerformance(PlayingGuitarToMusic);if(AdvanceBridge(now))return;
                 }
                 else if(AdvancePerformance(now))return;
             }
             if (visitor == null && !dragging && now >= effectUntil)
             {
                 if (row != Idle) SetEffect(Idle, 0);
+                if (!pressing && PlayingGuitarToMusic && TakeStandingGuitar("musicpickup")) return;
                 if (!pressing && AnimateKaraoke(now)) return;
                 if(ResumePerformance(now))return;
                 if (!MusicPlaying && now >= ambientAt && !pressing) {Ambient();if(activePoses!=null || visitor!=null)return;}
@@ -575,10 +614,11 @@ namespace DeskMate
         // This short-lived, click-through window only covers the two sprites and their walking path.
         private sealed class VisitScene
         {
+            public string Guest,GuestArtId;
             public Window Layer;
             public IntPtr Handle;
             public Image Actor;
-            public BitmapSource[] HostTea,GuestTea,GuestSteps,HostSteps;
+            public BitmapSource[] HostTea,GuestTea,GuestSteps,GuestLeftSteps,HostSteps;
             public readonly Dictionary<BitmapSource,BitmapSource> Flips=new Dictionary<BitmapSource,BitmapSource>();
             public BitmapSource[][] Art;
             public DuetScene Duet;
@@ -603,6 +643,7 @@ namespace DeskMate
             var duet=independent?PrepareDuet(side):null;
             string guest=duet!=null?duet.Guest:character=="rem"?"kurisu":"rem";
             var scene = new VisitScene {
+                Guest=guest,GuestArtId=app.CharacterArtId(guest),
                 Actor = new Image { Width = sprite.Width, Height = sprite.Height, Stretch = Stretch.Fill },
                 Art = LoadArt(guest),Duet=duet,
                 GuestSteps=ActionFrames(guest,"turnstep"),HostSteps=duet!=null && character=="steve"?ActionFrames(character,"turnstep"):null,
@@ -610,6 +651,7 @@ namespace DeskMate
                 Since = clock.ElapsedMilliseconds, Independent=independent,
                 Side = side
             };
+            if(guest=="mutsumi")scene.GuestLeftSteps=MutsumiLeftSteps(scene.Art);
             var canvas = new Canvas { IsHitTestVisible = false };
             RenderOptions.SetBitmapScalingMode(scene.Actor, BitmapScalingMode.HighQuality);
             canvas.Children.Add(scene.Actor);
@@ -629,6 +671,8 @@ namespace DeskMate
             visitor = scene;
             scene.Layer.Show();
             UpdateVisit(scene.Since);
+            if(character=="mutsumi" && duet!=null && duet.MutsumiPhrase!=null && TakeStandingGuitar("musicpickup"))
+                scene.Since=BridgeEnd;
         }
 
         private static double Smooth(double t)
@@ -681,6 +725,7 @@ namespace DeskMate
                                 case "rem": Say("红莉栖小姐，刚好泡了茶。");break;
                                 case "kurisu": Say("蕾姆？来得正好，实验告一段落了。");break;
                                 case "hitori": Say("蕾姆……要听我刚练好的那一小段吗？");break;
+                                case "mutsumi": Say("蕾姆，茶泡好了。");break;
                                 case "steve": Say("蕾姆，一起歇一会儿吧。");break;
                                 default: Say("蕾姆，来窗边一起坐坐吧。");break;
                             }
@@ -689,7 +734,7 @@ namespace DeskMate
                     case 2: SetEffect(character=="steve"?Idle:Review, 3300); break;
                     case 3: case 4:
                         SetEffect(character=="steve"?Idle:Wave, 2200);
-                        if (phase == 3 && !app.Data.Quiet) Say(character=="steve"?"下次见。":rem ? "下次见，杯子放这里就好。" : "茶很好喝。下次换我请你。");
+                        if (phase == 3 && !app.Data.Quiet) Say(character=="mutsumi"?"……下次见。":character=="steve"?"下次见。":rem ? "下次见，杯子放这里就好。" : "茶很好喝。下次换我请你。");
                         break;
                 }
             }

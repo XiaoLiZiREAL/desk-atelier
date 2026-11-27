@@ -160,13 +160,13 @@ namespace DeskMate
         {
             var settings=new StackPanel();
             var pair=new Grid();
-            string[][] builtin={new[]{"rem","蕾姆","蕾姆"},new[]{"kurisu","牧濑红莉栖","红莉栖"},new[]{"steve","史蒂夫","史蒂夫"},new[]{"hitori","后藤独","后藤独"}};
+            string[][] builtin={new[]{"rem","蕾姆","蕾姆"},new[]{"kurisu","牧濑红莉栖","红莉栖"},new[]{"steve","史蒂夫","史蒂夫"},new[]{"hitori","后藤独","后藤独"},new[]{"mutsumi","若叶睦","若叶睦"}};
             foreach(var item in builtin.Where(x=>System.IO.File.Exists(app.Asset(x[0]+"-still.png"))))
             {
                 string id=item[0],name=item[1];bool active=app.Data.Character==id;
                 int column=pair.ColumnDefinitions.Count;pair.ColumnDefinitions.Add(new ColumnDefinition());
                 var button=Ui.Button(name,delegate{app.Data.Character=id;app.Save();app.Pet.Sync();app.Pet.Reveal();RefreshPage();});
-                var pic=Ui.Picture(app.Asset(id+"-still.png"),41,49);
+                var pic=Ui.Picture(app.Asset(app.CharacterArtId(id)+"-still.png"),41,49);
                 var label=Ui.Heading(item[2],13);label.HorizontalAlignment=HorizontalAlignment.Center;
                 var portrait=new Grid();portrait.Children.Add(Ui.Stack(pic,label));
                 if(active){

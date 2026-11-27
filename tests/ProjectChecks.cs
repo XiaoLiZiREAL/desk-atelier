@@ -10,7 +10,8 @@ internal static partial class LifeChecks
 {
     static PersonalProject Project(SaveData data,string role)
     {
-        return role=="rem"?data.MaidProject:role=="hitori"?data.GuitarProject:role=="kurisu"?data.LabProject:data.MinerProject;
+        return role=="rem"?data.MaidProject:role=="hitori"?data.GuitarProject:role=="kurisu"?data.LabProject:
+            role=="mutsumi"?data.CucumberProject:data.MinerProject;
     }
     static void EndChapter()
     {
@@ -35,7 +36,7 @@ internal static partial class LifeChecks
     }
     static void CheckProjectsAndTransitions()
     {
-        foreach(string role in new[]{"rem","kurisu","hitori","steve"})
+        foreach(string role in new[]{"rem","kurisu","hitori","steve","mutsumi"})
         {
             ChooseCharacter(role);
             foreach(string key in new[]{"projectstart","projectwork","projectfinish","propbridge","turnstep"})
@@ -54,7 +55,7 @@ internal static partial class LifeChecks
             Need(project.Stage==0 && (bool)PetCall("ResumePerformance",PetNow()),role+" resumes an unfinished chapter without advancing it");
             EndChapter();
             var saved=Project(Store.Load(),role);
-            Need(saved.Stage==1 && saved.NextUtc>DateTime.UtcNow.AddMinutes(79).Ticks,role+" commits its first chapter and hours-scale deadline to disk");
+            Need(saved.Stage==1 && saved.NextUtc>DateTime.UtcNow.AddMinutes(role=="mutsumi"?149:79).Ticks,role+" commits its first chapter and hours-scale deadline to disk");
             PetCall("Ambient");
             Need(!pet.CurrentActivity.StartsWith("project"),role+" fills the waiting time with its ordinary routine");
             PetCall("ForgetPerformance");
@@ -65,7 +66,7 @@ internal static partial class LifeChecks
             Need(pet.CurrentActivity=="projectwork" && project.Stage==1,role+" returns after days away to the next unfinished chapter");
             EndChapter();
             saved=Project(Store.Load(),role);
-            Need(saved.Stage==2 && saved.NextUtc>DateTime.UtcNow.AddMinutes(114).Ticks,role+" schedules the final chapter from the actual completion time");
+            Need(saved.Stage==2 && saved.NextUtc>DateTime.UtcNow.AddMinutes(role=="mutsumi"?219:114).Ticks,role+" schedules the final chapter from the actual completion time");
             project.NextUtc=DateTime.UtcNow.AddSeconds(-1).Ticks;
             PetCall("Ambient");
             Need(pet.CurrentActivity=="projectfinish",role+" reaches its own outcome on the third chapter");
@@ -84,6 +85,7 @@ internal static partial class LifeChecks
         CheckPropHandoff("kurisu","pen","penbridge",810);
         CheckPropHandoff("steve","mine","toolbridge",780);
         CheckPropHandoff("hitori","tea","propbridge",100);
+        CheckPropHandoff("mutsumi","tea","propbridge",1780);
         CheckPropHandoff("rem","tea","propbridge",4570);
         ChooseCharacter("steve");StartAt("tea",100);PetCall("OpeningTool");
         Need(Read<string>("bridgeKind")==null,"Steve's empty first tea pose does not conjure a bottle");

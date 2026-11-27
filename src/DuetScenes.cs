@@ -7,10 +7,13 @@ using System.Windows.Media.Imaging;
 
 namespace DeskMate
 {
+    public enum HitoriVisitTurn { FromOldSave, Pick, TeaAfterPick, Rehearsal, TeaAfterRehearsal }
+
     public partial class SaveData
     {
         // Completed stories alternate with the shorter tea visit, independently for each pair.
         public int DuetTeaTurns;
+        public HitoriVisitTurn HitoriVisit;
     }
 
     public sealed partial class PetWindow
@@ -19,7 +22,7 @@ namespace DeskMate
         {
             public string Guest;
             public bool Pick, MirrorBocchi, MirrorKurisu, SteveFacesRight;
-            public BitmapSource[] Bocchi, Bow, Steve, RemIn, RemOut, KurisuIn, KurisuOut;
+            public BitmapSource[] Bocchi, Bow, Steve, RemIn, RemOut, KurisuIn, KurisuOut, MutsumiPhrase;
             public readonly Image Prop=new Image { IsHitTestVisible=false, Stretch=Stretch.Fill, RenderTransformOrigin=new Point(.5,.5) };
             public readonly RotateTransform Spin=new RotateTransform();
             public readonly TranslateTransform HostStep=new TranslateTransform();
@@ -28,16 +31,31 @@ namespace DeskMate
 
         int DuetTurn()
         {
+            // Read the old pair flag before another host can spend it. After migration
+            // only a completed visit with Bocchi as the host advances her four-stage cycle.
+            if(app.Data.HitoriVisit==HitoriVisitTurn.FromOldSave)
+                app.Data.HitoriVisit=(app.Data.DuetTeaTurns&1)!=0?HitoriVisitTurn.TeaAfterPick:HitoriVisitTurn.Pick;
             switch(character){
-                case "hitori":case "steve":return 1;
+                case "hitori":return app.Data.HitoriVisit==HitoriVisitTurn.Rehearsal || app.Data.HitoriVisit==HitoriVisitTurn.TeaAfterRehearsal?4:1;
+                case "steve":return 1;
+                case "mutsumi":return 4;
                 case "rem":case "kurisu":return 2;
                 default:return 0;
             }
+        }
+        bool HitoriTeaIsDue
+        {
+            get { return app.Data.HitoriVisit==HitoriVisitTurn.TeaAfterPick || app.Data.HitoriVisit==HitoriVisitTurn.TeaAfterRehearsal; }
         }
         void CompleteVisit(VisitScene scene)
         {
             int pair=DuetTurn();
             if(!scene.Independent || pair==0)return;
+            if(character=="hitori"){
+                if(scene.Duet==null && !HitoriTeaIsDue)return;
+                if(scene.Duet==null)app.Data.HitoriVisit=pair==1?HitoriVisitTurn.Rehearsal:HitoriVisitTurn.Pick;
+                else app.Data.HitoriVisit=pair==1?HitoriVisitTurn.TeaAfterPick:HitoriVisitTurn.TeaAfterRehearsal;
+            }
             if(scene.Duet==null)app.Data.DuetTeaTurns &= ~pair;
             else app.Data.DuetTeaTurns |= pair;
             app.Save();
@@ -57,7 +75,7 @@ namespace DeskMate
         DuetScene PrepareDuet(double side)
         {
             int pair=DuetTurn();
-            if(pair==0 || (app.Data.DuetTeaTurns & pair)!=0)return null;
+            if(pair==0 || (character=="hitori"?HitoriTeaIsDue:(app.Data.DuetTeaTurns & pair)!=0))return null;
             var d=new DuetScene {Pick=pair==1};
             if(d.Pick){
                 d.Guest=character=="hitori"?"steve":"hitori";
@@ -69,6 +87,15 @@ namespace DeskMate
                 if(d.Bocchi==null || d.Bow==null || d.Steve==null || !File.Exists(app.Asset("duet-pick.png")))return null;
                 d.Prop.Source=Ui.Bitmap(app.Asset("duet-pick.png"));
                 d.Prop.Width=sprite.Width*14/192;d.Prop.Height=sprite.Height*15/208;
+            }else if(pair==4){
+                d.Guest=character=="mutsumi"?"hitori":"mutsumi";
+                bool partnerOnRight=character=="mutsumi"?side>0:side<0;
+                var phrase=ActionFrames("mutsumi",partnerOnRight?"duetphrase":"duetleft");
+                var picking=ActionFrames("mutsumi","mutepractice");
+                d.Bocchi=ActionFrames("hitori","focus");
+                if(phrase==null || picking==null || d.Bocchi==null)return null;
+                d.MutsumiPhrase=new[]{phrase[0],phrase[1],phrase[2],phrase[3],phrase[4],phrase[5],
+                                      picking[2],picking[1],picking[3]};
             }else{
                 d.Guest=character=="rem"?"kurisu":"rem";
                 d.MirrorKurisu=character=="kurisu"?side>0:side<0;
@@ -126,8 +153,10 @@ namespace DeskMate
         {
             var steps=host?scene.HostSteps:scene.GuestSteps;
             if(steps!=null){
-                if(elapsed<.4)return Facing(scene,steps[Math.Min(3,(int)(Math.Max(0,elapsed)*10))],direction<0);
-                if(elapsed>=duration-.26)return Facing(scene,steps[elapsed<duration-.13?4:5],direction<0);
+                bool mirror=direction<0;
+                if(!host && mirror && scene.GuestLeftSteps!=null){steps=scene.GuestLeftSteps;mirror=false;}
+                if(elapsed<.4)return Facing(scene,steps[Math.Min(3,(int)(Math.Max(0,elapsed)*10))],mirror);
+                if(elapsed>=duration-.26)return Facing(scene,steps[elapsed<duration-.13?4:5],mirror);
             }
             int state=direction>0?Right:Leftward;
             return (host?frames:scene.Art)[state][(int)(Math.Max(0,elapsed)*1000/FrameMs[state])%Counts[state]];
@@ -153,9 +182,23 @@ namespace DeskMate
                 if(steveHost)d.HostStep.X=steveX-hostX;else guestX=steveX;
                 double bocchiX=steveHost?guestX:hostX;
                 DrawPickExchange(scene,t,bocchiX,steveX,steveRest+towardBocchi*stride,steveHost,towardBocchi);
-            }else DrawPaperExchange(scene,t,hostX,guestX);
+            }else if(d.MutsumiPhrase!=null)DrawGuitarRehearsal(scene,t);
+            else DrawPaperExchange(scene,t,hostX,guestX);
             Canvas.SetLeft(scene.Actor,guestX-sprite.Width*.5);
             if(walking)DuoPose(scene,false,StepFrame(scene,false,t<1.8?-scene.Side:scene.Side,t<1.8?t:t-11.2,t<1.8?1.8:3.1));
+        }
+        void DrawGuitarRehearsal(VisitScene scene,double t)
+        {
+            var d=scene.Duet;
+            bool mutsumiHost=character=="mutsumi";
+            // Bocchi starts, then holds her fretting hand. Mutsumi plays two isolated notes
+            // and mutes her strings until Bocchi has played the phrase back on her own.
+            long elapsed=(long)Math.Round(t*1000);
+            int mutsumi=ActionScore.RehearsalLead.At(elapsed);
+            int bocchi=ActionScore.RehearsalReply.At(elapsed);
+            // Both instruments are right handed even if the visitor enters from the other side.
+            DuoPose(scene,mutsumiHost,d.MutsumiPhrase[mutsumi]);
+            DuoPose(scene,!mutsumiHost,d.Bocchi[bocchi]);
         }
         void DrawPickExchange(VisitScene scene,double t,double bocchiX,double steveX,double pickupX,bool steveHost,double towardBocchi)
         {

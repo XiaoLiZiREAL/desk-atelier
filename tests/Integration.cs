@@ -397,6 +397,37 @@ internal static partial class Integration
         Check(app.Data.Character=="hitori" && Store.Load().Character=="hitori" && app.CharacterName=="后藤独",
             "Hitori is selectable as a built-in partner and the choice survives reload");
         Capture(app.Pet,"12-desktop-hitori");
+        var mutsumi=Find("若叶睦");
+        Check(mutsumi!=null && mutsumi.IsVisible && mutsumi.ActualWidth>=42,
+            "Mutsumi has a visible, usable fifth button in the compact settings card");
+        Click(mutsumi);
+        Check(app.Data.Character=="mutsumi" && app.Pet.LiveSprite.Source!=null &&
+            Store.Load().Character=="mutsumi" && app.CharacterName=="若叶睦",
+            "Selecting Mutsumi shows her sprite and persists the partner selection");
+        Capture(app.Pet,"12-desktop-mutsumi");
+        Capture(app.Desk,"11-settings-mutsumi");
+        app.Desk.Close();
+        var wardrobe=Quick().Items.OfType<MenuItem>().Single(i=>Equals(i.Header,"换衣服"));
+        wardrobe.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent,wardrobe));Pump(120);
+        var costumes=CurrentMenu();
+        Check(costumes.IsOpen && costumes.Items.OfType<MenuItem>().Count()==3 && costumes.ActualHeight<150,
+            "Wardrobe opens a compact menu with a back action and two outfits");
+        var stage=costumes.Items.OfType<MenuItem>().Single(i=>Equals(i.Header,"红贝雷帽演出服"));
+        costumes.IsOpen=false;stage.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent,stage));Pump(120);
+        Check(app.Data.Character=="mutsumi" && Store.Load().MutsumiOutfit=="stage" && app.CharacterArtId("mutsumi")=="mutsumi-stage",
+            "Wardrobe switches the current outfit without replacing the pet and saves it");
+        Capture(app.Pet,"12-desktop-mutsumi-stage");
+        var tray=(Forms.ContextMenuStrip)typeof(PetWindow).GetField("menu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(app.Pet);
+        var options=Menu(tray,"换衣服").DropDownItems.OfType<Forms.ToolStripMenuItem>().ToArray();
+        Check(options[1].Checked && !options[0].Checked,"Tray wardrobe mirrors the equipped stage outfit");
+        app.Open("gift");
+        Check(app.Desk.PreviewGift(Path.Combine(stateDir,"friend.deskpet")),"Saved gift opens to a preview with Mutsumi");
+        var roomKey=typeof(StudioWindow).GetField("roomSpriteKey",BindingFlags.Instance|BindingFlags.NonPublic);
+        Check((string)roomKey.GetValue(app.Desk)=="mutsumi-stage","Gift preview uses the equipped stage portrait");
+        options[0].PerformClick();Pump(70);
+        Check(Store.Load().MutsumiOutfit=="uniform" && options[0].Checked,"Tray restores the school uniform");
+        Check((string)roomKey.GetValue(app.Desk)=="mutsumi","Open gift preview refreshes its portrait after changing clothes");
+        Nav("settings");
         if (app.Data.Character != "kurisu")
         {
             var pick = Find("红莉栖","牧濑红莉栖","选择红莉栖","换成红莉栖");

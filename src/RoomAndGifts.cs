@@ -405,7 +405,7 @@ namespace DeskMate
         static string ThemeName(string key) { int ix=Array.IndexOf(ThemeKeys,key);return ThemeNames[ix<0?0:ix]; }
         ImageSource RoomSprite()
         {
-            string key=app.Data.Character;if(key!=roomSpriteKey || roomSprite==null)
+            string key=app.CharacterArtId(app.Data.Character);if(key!=roomSpriteKey || roomSprite==null)
             { roomSprite=DrawingKit.Load(app.Asset(key+"-still.png"));roomSpriteKey=key; }
             return roomSprite;
         }

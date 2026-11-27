@@ -12,7 +12,7 @@ namespace DeskMate
     public partial class SaveData
     {
         public PersonalProject MaidProject=new PersonalProject(), LabProject=new PersonalProject(),
-            MinerProject=new PersonalProject(), GuitarProject=new PersonalProject();
+            MinerProject=new PersonalProject(), GuitarProject=new PersonalProject(), CucumberProject=new PersonalProject();
 
         internal PersonalProject ProjectFor(string role)
         {
@@ -22,6 +22,7 @@ namespace DeskMate
                 case "kurisu": return LabProject ?? (LabProject=new PersonalProject());
                 case "steve": return MinerProject ?? (MinerProject=new PersonalProject());
                 case "hitori": return GuitarProject ?? (GuitarProject=new PersonalProject());
+                case "mutsumi": return CucumberProject ?? (CucumberProject=new PersonalProject());
                 default: return null;
             }
         }
@@ -30,6 +31,14 @@ namespace DeskMate
     public sealed partial class PetWindow
     {
         static readonly string[] ProjectChapters={"projectstart","projectwork","projectfinish"};
+
+        bool HasTrellisedCucumber()
+        {
+            var project=app.Data.ProjectFor("mutsumi");
+            // Stage two follows tying the vine. After harvest, the mature vine remains
+            // available until she actually completes the next seedling chapter.
+            return project.Stage==2 || (project.Stage==0 && project.NextUtc>0);
+        }
 
         bool TryStartProject()
         {
@@ -54,6 +63,8 @@ namespace DeskMate
             project.Stage=(project.Stage+1)%ProjectChapters.Length;
             if(project.Stage==0)
                 project.NextUtc=DateTime.Today.AddDays(1).AddHours(9).AddMinutes(random.Next(61)).ToUniversalTime().Ticks;
+            else if(character=="mutsumi")
+                project.NextUtc=DateTime.UtcNow.AddMinutes(project.Stage==1?random.Next(150,211):random.Next(220,301)).Ticks;
             else
                 project.NextUtc=DateTime.UtcNow.AddMinutes(project.Stage==1?random.Next(80,101):random.Next(115,151)).Ticks;
             app.Save();

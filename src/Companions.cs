@@ -23,7 +23,7 @@ namespace DeskMate
     {
         const int MetadataLimit = 16384, ImageLimit = 20 * 1024 * 1024;
         internal const int MaxPets = 64;
-        internal static readonly string[] BuiltinIds={"rem","kurisu","steve","hitori"};
+        internal static readonly string[] BuiltinIds={"rem","kurisu","steve","hitori","mutsumi"};
         internal static bool IsBuiltin(string id){return Array.IndexOf(BuiltinIds,id)>=0;}
         internal static bool IsId(string id)
         {

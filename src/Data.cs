@@ -42,6 +42,7 @@ namespace DeskMate
         public bool Quiet;
         public bool HideFullscreen = true;
         public string Character = "rem";
+        public string MutsumiOutfit = "uniform";
         public string RoomTheme = "sage";
         public string Nickname = "";
         public string LastGift = "";
@@ -118,6 +119,7 @@ namespace DeskMate
         {
             if (!CompanionArchive.IsBuiltin(data.Character) && !CompanionArchive.IsId(data.Character)) data.Character = "rem";
             if (String.IsNullOrWhiteSpace(data.RoomTheme)) data.RoomTheme = "sage";
+            if(data.MutsumiOutfit!="stage")data.MutsumiOutfit="uniform";
             if (Double.IsInfinity(data.PetX)) data.PetX = double.NaN;
             if (Double.IsInfinity(data.PetY)) data.PetY = double.NaN;
             if (Double.IsInfinity(data.PetScale) || Double.IsNaN(data.PetScale) || data.PetScale <= 0)

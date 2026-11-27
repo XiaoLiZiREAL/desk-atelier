@@ -326,6 +326,11 @@ internal static partial class LifeChecks
             Until(()=>pet.CurrentActivity=="focus",2200,"Hitori starts by practicing guitar without user input");
             CaptureSignature("hitori","focus");
             Need(Store.Load().GuitarRoutine==1,"Hitori keeps her own routine progress");
+            CheckArt("mutsumi",false);
+            app.Data.Character="mutsumi";pet.Sync();ResetPose();DueSoon();
+            Until(()=>pet.CurrentActivity=="tune",2200,"Mutsumi starts tuning autonomously on her first turn");
+            CaptureSignature("mutsumi","tune");
+            Need(Store.Load().MutsumiRoutine==1,"Mutsumi keeps a separate practice routine");
             CheckContinuations();
             Say("ALL LIFE CHECKS PASSED");ok=true;
         }

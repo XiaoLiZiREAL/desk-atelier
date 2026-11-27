@@ -16,10 +16,18 @@ $systemMetadata = Join-Path $env:WINDIR 'System32\WinMetadata'
 if ([Environment]::Is64BitOperatingSystem -and $framework -notmatch 'Framework64') { $systemMetadata = Join-Path $env:WINDIR 'Sysnative\WinMetadata' }
 foreach ($lib in 'Windows.Media.winmd','Windows.Foundation.winmd','Windows.Graphics.winmd','Windows.Globalization.winmd','Windows.Storage.winmd') { $params += "/reference:$systemMetadata\$lib" }
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'assets') -File) { $params += ('/resource:' + $file.FullName + ',art.' + $file.Name) }
-$hitori=Join-Path $PSScriptRoot '../art/hitori'
-$params += "/resource:$hitori/atlas.png,art.hitori.png"
-$params += "/resource:$hitori/portrait.png,art.hitori-still.png"
-foreach ($role in 'hitori','rem','kurisu') {
+foreach ($role in 'hitori','mutsumi') {
+    $art=Join-Path $PSScriptRoot "../art/$role"
+    $params += "/resource:$art/atlas.png,art.$role.png"
+    $params += "/resource:$art/portrait.png,art.$role-still.png"
+}
+$stageArt=Join-Path $PSScriptRoot '../art/mutsumi/outfits/stage'
+$params += "/resource:$stageArt/atlas.png,art.mutsumi-stage.png"
+$params += "/resource:$stageArt/portrait.png,art.mutsumi-stage-still.png"
+foreach ($strip in Get-ChildItem -LiteralPath (Join-Path $stageArt 'actions') -Filter '*.png' -File) {
+    $params += "/resource:$($strip.FullName),art.motion-mutsumi-stage-$($strip.Name)"
+}
+foreach ($role in 'hitori','rem','kurisu','mutsumi') {
     foreach ($strip in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot "../art/$role/actions") -Filter '*.png' -File) {
         $asset="motion-$role-"+$strip.Name
         if (!(Test-Path -LiteralPath (Join-Path "$PSScriptRoot/assets" $asset))) {

@@ -28,6 +28,7 @@ namespace DeskMate
         private MusicPanelKind panelKind;
         private MusicMotion musicMotion;
         private bool lyricPlaying { get { return musicMotion!=MusicMotion.Stopped; } }
+        private bool PlayingGuitarToMusic { get { return KaraokeVisible && lyricPlaying && musicMotion!=MusicMotion.Listening; } }
         private bool placementDirty, placingLyrics, dancing, showProgress;
         private int lyricRevision;
         private long singingSince;
@@ -253,6 +254,18 @@ namespace DeskMate
             if(musicMotion==MusicMotion.Singing){
                 var singing=ActionFrames(character,"song");
                 if(singing!=null){ShowPose(singing[ActionScore.SungPose(elapsed,lyricFraction)]);return true;}
+            }
+            if(UsesMutsumiActions){
+                // Without timed words she listens. The instrumental sections use closed-mouth rhythm playing.
+                string action=musicMotion==MusicMotion.Listening?"listenbeat":"mutepractice";
+                var strip=ActionFrames(character,action);
+                if(strip!=null){
+                    if(musicMotion==MusicMotion.Intro){
+                        ShowPose(strip[QuietPicking[(elapsed/560)%QuietPicking.Length]]);return true;
+                    }
+                    var score=ActionScore.For(action);
+                    ShowPose(strip[score.At(elapsed%score.Duration)]);return true;
+                }
             }
             if(character=="hitori"){
                 // Her focus strip shows the fretting and picking hands with her head lowered.
