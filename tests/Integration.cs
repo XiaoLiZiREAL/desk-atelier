@@ -427,6 +427,7 @@ internal static partial class Integration
         options[0].PerformClick();Pump(70);
         Check(Store.Load().MutsumiOutfit=="uniform" && options[0].Checked,"Tray restores the school uniform");
         Check((string)roomKey.GetValue(app.Desk)=="mutsumi","Open gift preview refreshes its portrait after changing clothes");
+        Click("暂时不收");
         Nav("settings");
         if (app.Data.Character != "kurisu")
         {
