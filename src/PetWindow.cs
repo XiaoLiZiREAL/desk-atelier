@@ -529,9 +529,9 @@ namespace DeskMate
                 }
                 if (IsVisible && !pressing) ClampCurrent();
             }
-            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene ? 34 : 80);
+            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene || (currentArtId=="steve" && focusCue.Pending) ? 34 : 80);
             RefreshKaraokeOverlay();
-            if (!IsVisible) { EndDesktopScene(true); EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            if (!IsVisible) { PresentFocusCompanion(now,false); EndDesktopScene(true); EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
             // The perch timer owns the sprite while seated. Ordinary idle and
             // transient prop animations must not fight over the same image.
             if(perchAligned)return;
@@ -551,12 +551,15 @@ namespace DeskMate
             if (visitor != null) {UpdateVisit(now);if(visitor!=null && (visitor.Duet!=null || (visitor.Phase==2 && visitor.HostTea!=null)))return;}
             if(visitor==null && activePoses!=null && !dragging)
             {
-                if(independentPerformance && (app.Data.Quiet || MusicPlaying || ToolOpen() ||
-                    (app.FocusActive && !app.FocusPaused && performance!="focus"))){
+                bool yieldingToFocus=app.FocusActive && HasFocusCostume && app.Desk!=null && app.Desk.CurrentTool=="focus" &&
+                    (quickMenu==null || !quickMenu.IsOpen) && !menu.Visible;
+                if(independentPerformance && (app.Data.Quiet || MusicPlaying || (ToolOpen() && !yieldingToFocus) ||
+                    (app.FocusActive && !app.FocusPaused && !HasFocusCostume && performance!="focus"))){
                     InterruptPerformance(PlayingGuitarToMusic);if(AdvanceBridge(now))return;
                 }
                 else if(AdvancePerformance(now))return;
             }
+            if (PresentFocusCompanion(now,now>=effectUntil))return;
             if (visitor == null && !dragging && now >= effectUntil)
             {
                 if (row != Idle) SetEffect(Idle, 0);

@@ -246,7 +246,7 @@ namespace DeskMate
             Data.FocusEndUtc = DateTime.UtcNow.AddMinutes(minutes).Ticks;
             Data.PausedSeconds = 0;
             Save();
-            React("focus", Data.Character == "kurisu" ? "计时开始。我也来整理一下实验笔记。" : "一起安静工作吧，时间到了我来叫你。");
+            if (Pet != null) Pet.FocusSessionStarted();
         }
 
         public void PauseFocus()
@@ -272,6 +272,7 @@ namespace DeskMate
             if (Data.FocusEndUtc > 0 && RemainingSeconds == 0) { TickTools(); return; }
             Data.PausedSeconds = 0;
             Data.FocusEndUtc = 0;
+            if (Pet != null) Pet.FocusSessionEnded(false);
             Save();
         }
 
@@ -285,6 +286,7 @@ namespace DeskMate
             {
                 Data.FocusEndUtc = 0;
                 Data.PausedSeconds = 0;
+                if (Pet != null) Pet.FocusSessionEnded(true);
                 if (Data.FocusCount < Int32.MaxValue) Data.FocusCount++;
                 Data.FocusMinutesTotal = (int)Math.Min(Int32.MaxValue, (long)Data.FocusMinutesTotal + Data.PlannedMinutes);
             }
@@ -292,12 +294,12 @@ namespace DeskMate
             if (due.Count>0 && NotesDesk!=null && NotesDesk.IsVisible) NotesDesk.RefreshStickyCollection();
             Save();
             List<string> messages = new List<string>();
-            if (finished) messages.Add(Data.FocusCount == 3 ? "专注完成！收音机组装好了，去房间听听吧。" : "完成了 " + Data.PlannedMinutes + " 分钟专注，起来活动一下吧。");
+            if (finished && Desk != null) Desk.ShowStatus(Data.FocusCount == 3 ? "专注完成！收音机组装好了，去房间听听吧。" : "完成了 " + Data.PlannedMinutes + " 分钟专注，起来活动一下吧。");
             if (due.Count > 0)
                 messages.Add((due.Count == 1 ? "便签提醒 · " : due.Count + " 项便签到期 · ") +
                     String.Join("、", due.Take(2).Select(n => ReminderPreview(n.Preview))) +
                     (due.Count > 2 ? " 等" : ""));
-            Notify(String.Join("　", messages));
+            if (messages.Count > 0) Notify(String.Join("　", messages));
             RefreshReturnedPaper();
         }
 

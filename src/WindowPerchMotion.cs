@@ -188,12 +188,12 @@ namespace DeskMate
             next=now+random.Next(3100,5101);
             if(canLounge){nextLounge=now+random.Next(35000,60001);proneNext=random.Next(2)==1;}
         }
-        internal SeatPose At(long now,bool quiet)
+        internal SeatPose At(long now,bool quiet,bool holdNewActivity=false)
         {
             if(previous>=0 && (now<previous || now-previous>12500))Reset(now);
             previous=now;
             if(quiet && eventKind>=5){eventKind=-1;next=now+6000;}
-            if(eventKind<0 && now>=next)
+            if(eventKind<0 && now>=next && !holdNewActivity)
             {
                 if(canLounge && !quiet && now>=nextLounge)
                 {

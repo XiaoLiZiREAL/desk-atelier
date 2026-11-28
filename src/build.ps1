@@ -16,7 +16,11 @@ foreach ($lib in 'System.Runtime.dll','System.Runtime.WindowsRuntime.dll','Syste
 $systemMetadata = Join-Path $env:WINDIR 'System32\WinMetadata'
 if ([Environment]::Is64BitOperatingSystem -and $framework -notmatch 'Framework64') { $systemMetadata = Join-Path $env:WINDIR 'Sysnative\WinMetadata' }
 foreach ($lib in 'Windows.Media.winmd','Windows.Foundation.winmd','Windows.Graphics.winmd','Windows.Globalization.winmd','Windows.Storage.winmd') { $params += "/reference:$systemMetadata\$lib" }
-foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'assets') -File) { $params += ('/resource:' + $file.FullName + ',art.' + $file.Name) }
+foreach ($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'assets') -File) {
+    # Old Steve comparison renders are preserved for QA, but never played.
+    if ($file.Name -like 'motion-steve-focusmate*.png' -or $file.Name -like 'motion-steve-focuscave-*.png') { continue }
+    $params += ('/resource:' + $file.FullName + ',art.' + $file.Name)
+}
 foreach ($role in 'hitori','mutsumi') {
     $art=Join-Path $PSScriptRoot "../art/$role"
     $params += "/resource:$art/atlas.png,art.$role.png"
@@ -37,6 +41,15 @@ foreach ($role in 'hitori','rem','kurisu','mutsumi') {
     }
 }
 foreach ($file in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.cs') { $params += $file.FullName }
-& (Join-Path $framework 'csc.exe') @params
-if ($LASTEXITCODE) { throw "Compilation failed ($LASTEXITCODE)" }
+# Games with many embedded animation strips exceed Windows' command-line limit.
+# Use a UTF-8 response file so source and output paths can still contain spaces.
+$rsp = Join-Path ([IO.Path]::GetTempPath()) ('DeskAtelier-' + [Guid]::NewGuid().ToString('N') + '.rsp')
+try {
+    $lines = @($params | ForEach-Object { '"' + $_ + '"' })
+    [IO.File]::WriteAllLines($rsp, [string[]]$lines, [Text.UTF8Encoding]::new($true))
+    & (Join-Path $framework 'csc.exe') "@$rsp"
+    if ($LASTEXITCODE) { throw "Compilation failed ($LASTEXITCODE)" }
+} finally {
+    if ([IO.File]::Exists($rsp)) { [IO.File]::Delete($rsp) }
+}
 Write-Output $outPath

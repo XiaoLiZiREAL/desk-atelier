@@ -361,13 +361,14 @@ namespace DeskMate
         {
             if(!perchAligned || perchPoses==null)return;
             if(pressing || (quickMenu!=null && quickMenu.IsOpen) || menu.Visible)return;
-            SeatPose pose=windowSeatRoutine==null?new SeatPose(false,0):windowSeatRoutine.At(now,app.Data.Quiet);
+            SeatPose pose=windowSeatRoutine==null?new SeatPose(false,0):windowSeatRoutine.At(now,app.Data.Quiet,(app.FocusActive || focusCue.Pending) && HasFocusCostume);
             BitmapSource[] atlas=pose.Lounge?perchLoungePoses:pose.Swing?perchSwingPoses:pose.Activity?perchPoses:perchStillPoses;
             BitmapSource desired=atlas==null?perchPoses[0]:atlas[pose.Frame];
             if(backpackButton.Visibility!=Visibility.Collapsed)backpackButton.Visibility=Visibility.Collapsed;
             if(bubble.Visibility!=Visibility.Collapsed)bubble.Visibility=Visibility.Collapsed;
             if(parkedProp.Visibility!=Visibility.Collapsed)parkedProp.Visibility=Visibility.Collapsed;
             if(parkedMusicGuitar.Visibility!=Visibility.Collapsed)parkedMusicGuitar.Visibility=Visibility.Collapsed;
+            if(PresentFocusCompanion(now,focusCue.Started || (!pose.Activity && !pose.Lounge && !pose.Swing && pose.Frame==0)))return;
             if(!object.ReferenceEquals(sprite.Source,desired))ShowPose(desired);
         }
 

@@ -133,7 +133,8 @@ namespace DeskMate
         bool PerformingPaper { get { return performance=="handoff" || performance=="returnnote"; } }
         bool UsesMutsumiActions { get { return character=="mutsumi" || (!CompanionArchive.IsBuiltin(character) && ActionFrames(character,"tune")!=null); } }
         bool UsesStageActions { get { return currentArtId=="mutsumi-stage" || (!CompanionArchive.IsBuiltin(character) && ActionFrames(character,"hatbow")!=null); } }
-        public string CurrentActivity { get { return visitor!=null?"visit":dancing?"song":bridgeKind=="pickup"?"pickup":performance; } }
+        public string CurrentActivity { get { return visitor!=null?"visit":dancing?"song":bridgeKind=="pickup"?"pickup":
+            (app.FocusActive && focusCue.Started?"focus":performance); } }
         public bool OfferingGame { get { return soloGame && gameResultAt==0; } }
 
         internal BitmapSource[] ActionFrames(string id,string key)
@@ -154,17 +155,20 @@ namespace DeskMate
                     BitmapSource bitmap;
                     using(var file=File.OpenRead(path))bitmap=new PngBitmapDecoder(file,BitmapCreateOptions.IgnoreColorProfile,BitmapCacheOption.OnLoad).Frames[0];
                     if(bitmap.CanFreeze)bitmap.Freeze();
-                    if(bitmap.PixelWidth==1152 && bitmap.PixelHeight==208)
+                    const int celCount=6;
+                    if(bitmap.PixelWidth==1152 && bitmap.PixelHeight==208*((celCount+5)/6))
                     {
-                        clips=new BitmapSource[6];
-                        for(int i=0;i<6;i++) { var pose=new CroppedBitmap(bitmap,new Int32Rect(i*192,0,192,208));pose.Freeze();clips[i]=pose; }
+                        clips=new BitmapSource[celCount];
+                        for(int i=0;i<celCount;i++) { var pose=new CroppedBitmap(bitmap,new Int32Rect(i%6*192,i/6*208,192,208));pose.Freeze();clips[i]=pose; }
                     }
                 }
                 catch(IOException) { }
                 catch(NotSupportedException) { }
                 catch(FileFormatException) { }
             }
-            authored[token]=clips;return clips;
+            authored[token]=clips;
+
+            return clips;
         }
 
         void ShowPose(BitmapSource pose)
@@ -371,7 +375,7 @@ namespace DeskMate
         {
             if(!ShowingDesktopScene)return false;
             if(perchTarget!=IntPtr.Zero || desktopSceneArt!=currentArtId || CompanionOccupied() ||
-                PerformingPaper || (app.FocusActive && !app.FocusPaused))
+                PerformingPaper || (app.FocusActive && !app.FocusPaused && !HasFocusCostume))
             {EndDesktopScene(true);return false;}
             if(currentArtId=="mutsumi")
             {
@@ -449,6 +453,7 @@ namespace DeskMate
             if(CompanionOccupied()){ambientAt=now+4500;return;}
             if(app.FocusActive && !app.FocusPaused)
             {
+                if(HasFocusCostume)return;
                 if(!BeginPerformance("focus",false))SetEffect(Work,4200);
                 ambientAt=now+36000;return;
             }
