@@ -249,11 +249,24 @@ namespace DeskMate
         private bool AnimateKaraoke(long now)
         {
             if(!KaraokeVisible || !lyricPlaying)return false;
+            if(IsKuroneko && app.FocusActive && !app.FocusPaused){StopSongMovement();return false;}
             dancing=true;
             long elapsed=Math.Max(0,now-singingSince);
+            if(IsKuroneko && musicMotion!=MusicMotion.Singing && musicMotion!=MusicMotion.Stopped)
+            {
+                var listening=ActionFrames(character,"listenbeat");
+                if(listening!=null)
+                {
+                    bool instrumental=musicMotion==MusicMotion.Intro || musicMotion==MusicMotion.Interlude;
+                    ShowPose(listening[KuronekoChoreography.Listening(elapsed,instrumental)]);return true;
+                }
+            }
             if(musicMotion==MusicMotion.Singing){
                 var singing=ActionFrames(character,"song");
-                if(singing!=null){ShowPose(singing[ActionScore.SungPose(elapsed,lyricFraction)]);return true;}
+                if(singing!=null){
+                    ShowPose(singing[IsKuroneko?KuronekoChoreography.Singing(elapsed,lyricFraction):ActionScore.SungPose(elapsed,lyricFraction)]);
+                    return true;
+                }
             }
             if(UsesMutsumiActions){
                 // Without timed words she listens. The instrumental sections use closed-mouth rhythm playing.

@@ -160,7 +160,7 @@ namespace DeskMate
         {
             var settings=new StackPanel();
             var pair=new Grid();
-            string[][] builtin={new[]{"rem","蕾姆","蕾姆"},new[]{"kurisu","牧濑红莉栖","红莉栖"},new[]{"steve","史蒂夫","史蒂夫"},new[]{"hitori","后藤独","后藤独"},new[]{"mutsumi","若叶睦","若叶睦"}};
+            string[][] builtin={new[]{"rem","蕾姆","蕾姆"},new[]{"kurisu","牧濑红莉栖","红莉栖"},new[]{"steve","史蒂夫","史蒂夫"},new[]{"hitori","后藤独","后藤独"},new[]{"mutsumi","若叶睦","若叶睦"},new[]{"kuroneko","黑猫","黑猫"}};
             foreach(var item in builtin.Where(x=>System.IO.File.Exists(app.Asset(x[0]+"-still.png"))))
             {
                 string id=item[0],name=item[1];bool active=app.Data.Character==id;

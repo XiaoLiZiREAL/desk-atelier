@@ -77,8 +77,10 @@ namespace DeskMate
             if(poses==null)return false;
             perchPoses=poses;
             perchStillPoses=LoadPerchAtlas("window-rest-"+currentArtId+".png",6);
-            perchLoungePoses=currentArtId=="steve"?null:LoadPerchAtlas("window-lounge-"+currentArtId+".png",28);
-            perchSwingPoses=currentArtId=="steve"?null:LoadPerchAtlas("window-swing-"+currentArtId+".png",WindowSeatRoutine.SwingPoseCount);
+            perchLoungePoses=currentArtId=="steve"?null:LoadPerchAtlas("window-lounge-"+currentArtId+".png",IsKuroneko?12:28);
+            if(IsKuroneko && perchLoungePoses==null)
+                perchLoungePoses=LoadPerchAtlas("window-lounge-kuroneko.png",6);
+            perchSwingPoses=currentArtId=="steve"?null:LoadPerchAtlas("window-swing-"+currentArtId+".png",IsKuroneko?8:WindowSeatRoutine.SwingPoseCount);
             perchPoseArt=currentArtId;
             return true;
         }
@@ -240,7 +242,8 @@ namespace DeskMate
             TracePerch("attach");
             perchTarget=drop.Target;perchProcess=drop.Process;perchThread=drop.Thread;perchOffsetPixels=drop.Offset;
             perchFocusGrace.Reset();perchRectGrace.Reset();pendingClickAt=0;
-            windowSeatRoutine=new WindowSeatRoutine(currentArtId,random.Next(),clock.ElapsedMilliseconds,perchLoungePoses!=null,perchSwingPoses!=null);
+            windowSeatRoutine=new WindowSeatRoutine(currentArtId,random.Next(),clock.ElapsedMilliseconds,perchLoungePoses!=null,perchSwingPoses!=null,
+                IsKuroneko && perchLoungePoses!=null && perchLoungePoses.Length==12);
             EndVisit();ForgetPerformance();StopSongMovement();
             perchCallback=OnPerchEvent;
             // Watch only this window's process/thread and ignore all non-window events.
@@ -301,6 +304,7 @@ namespace DeskMate
                 // Stay bound and keep the same anchor/loop. Only the display is
                 // suspended; don't jump back to a saved desktop coordinate.
                 perchAligned=true;perchFallback=false;perchCovered=true;
+                ClearKuronekoMoment();
                 TracePerch("covered-still-bound");
                 SetPerchPollInterval(55);
                 if(IsVisible)Hide();
@@ -354,20 +358,22 @@ namespace DeskMate
             RefreshBagAttachment();
             Topmost=app.Data.AlwaysOnTop;
             if(!IsVisible)Show();
-            if(moved){PlaceSaved();SetEffect(Idle,0);}
+            if(moved){ClearKuronekoMoment();PlaceSaved();SetEffect(Idle,0);}
         }
 
         void RenderPerch(long now)
         {
             if(!perchAligned || perchPoses==null)return;
             if(pressing || (quickMenu!=null && quickMenu.IsOpen) || menu.Visible)return;
-            SeatPose pose=windowSeatRoutine==null?new SeatPose(false,0):windowSeatRoutine.At(now,app.Data.Quiet,(app.FocusActive || focusCue.Pending) && HasFocusCostume);
+            SeatPose pose=windowSeatRoutine==null?new SeatPose(false,0):windowSeatRoutine.At(now,app.Data.Quiet,((app.FocusActive || focusCue.Pending) && HasFocusCostume) || (IsKuroneko && kuronekoClicks.HasPending));
             BitmapSource[] atlas=pose.Lounge?perchLoungePoses:pose.Swing?perchSwingPoses:pose.Activity?perchPoses:perchStillPoses;
             BitmapSource desired=atlas==null?perchPoses[0]:atlas[pose.Frame];
             if(backpackButton.Visibility!=Visibility.Collapsed)backpackButton.Visibility=Visibility.Collapsed;
             if(bubble.Visibility!=Visibility.Collapsed)bubble.Visibility=Visibility.Collapsed;
             if(parkedProp.Visibility!=Visibility.Collapsed)parkedProp.Visibility=Visibility.Collapsed;
             if(parkedMusicGuitar.Visibility!=Visibility.Collapsed)parkedMusicGuitar.Visibility=Visibility.Collapsed;
+            if(RenderKuronekoNote(now))return;
+            if(RenderKuroneko(now,true,!pose.Activity && !pose.Lounge && !pose.Swing && pose.Frame==0,!pose.Lounge))return;
             if(PresentFocusCompanion(now,focusCue.Started || (!pose.Activity && !pose.Lounge && !pose.Swing && pose.Frame==0)))return;
             if(!object.ReferenceEquals(sprite.Source,desired))ShowPose(desired);
         }
@@ -380,6 +386,7 @@ namespace DeskMate
 
         void ClearWindowPerch(bool returnHome)
         {
+            ClearKuronekoMoment();
             bool had=perchTarget!=IntPtr.Zero;
             perchTarget=perchDisplay=IntPtr.Zero;
             windowSeatRoutine=null;

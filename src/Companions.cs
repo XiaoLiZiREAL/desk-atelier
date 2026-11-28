@@ -23,7 +23,7 @@ namespace DeskMate
     {
         const int MetadataLimit = 16384, ImageLimit = 20 * 1024 * 1024;
         internal const int MaxPets = 64;
-        internal static readonly string[] BuiltinIds={"rem","kurisu","steve","hitori","mutsumi"};
+        internal static readonly string[] BuiltinIds={"rem","kurisu","steve","hitori","mutsumi","kuroneko"};
         internal static bool IsBuiltin(string id){return Array.IndexOf(BuiltinIds,id)>=0;}
         internal static bool IsId(string id)
         {
@@ -365,6 +365,7 @@ namespace DeskMate
 
         public void VerifyCompanion()
         {
+            if(Data.Character=="kuroneko" && (!File.Exists(Asset("kuroneko.png")) || !File.Exists(Asset("kuroneko-still.png")))){Data.Character="rem";Save();return;}
             if(CompanionArchive.IsBuiltin(Data.Character))return;
             if(CustomName(Data.Character)==null || !File.Exists(LookupCustomAsset(Data.Character+".png")) ||
                !File.Exists(LookupCustomAsset(Data.Character+"-still.png")))

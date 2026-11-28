@@ -12,9 +12,10 @@ namespace DeskMate
     public partial class SaveData
     {
         public PersonalProject MaidProject=new PersonalProject(), LabProject=new PersonalProject(),
-            MinerProject=new PersonalProject(), GuitarProject=new PersonalProject(), CucumberProject=new PersonalProject();
+            MinerProject=new PersonalProject(), GuitarProject=new PersonalProject(), CucumberProject=new PersonalProject(), NovelProject=new PersonalProject();
 
         public long CucumberFruitSceneUtc;
+        public int KuronekoRoutine;
 
         internal PersonalProject ProjectFor(string role)
         {
@@ -25,6 +26,7 @@ namespace DeskMate
                 case "steve": return MinerProject ?? (MinerProject=new PersonalProject());
                 case "hitori": return GuitarProject ?? (GuitarProject=new PersonalProject());
                 case "mutsumi": return CucumberProject ?? (CucumberProject=new PersonalProject());
+                case "kuroneko": return NovelProject ?? (NovelProject=new PersonalProject());
                 default: return null;
             }
         }

@@ -99,12 +99,14 @@ namespace DeskMate
             sprite.MouseMove += OnMove;
             sprite.MouseLeftButtonUp += OnRelease;
             sprite.LostMouseCapture += delegate {
+                if(IsKuroneko && !kuronekoOwnRelease)kuronekoClicks.Cancel();
                 bool moved=dragging;pressing=dragging=false;
                 PerchBadge(false);
                 if(moved)FinishDragMotion();
             };
             sprite.MouseRightButtonUp += delegate(object sender, MouseButtonEventArgs args) {
                 pendingClickAt = 0;
+                ClearKuronekoMoment();
                 OpenQuickMenu(true);
                 args.Handled = true;
             };
@@ -305,9 +307,12 @@ namespace DeskMate
                 pendingClickAt=nearbySince=0;
                 ForgetPerformance();
                 ReleaseCharacterActions(currentArtId);
+                ResetKuroneko();
                 if (currentArtId != null && currentArtId != "rem" && currentArtId != "kurisu") art.Remove(currentArtId);
                 character = wanted;
                 currentArtId=wantedArt;
+                sprite.SetCharacterAlphaHit(IsKuroneko);
+                sprite.ToolTip=IsKuroneko?"单击黑猫的发饰、领口、袖口或手 · 坐在窗沿时可以点击鞋尖":"轻点打招呼 · 拖动换位置 · 右键或双击选工具";
                 frames = LoadArt(wanted);
                 currentFrame = currentRow = -1;
                 row = Idle;
@@ -400,13 +405,19 @@ namespace DeskMate
             }
         }
 
+        bool kuronekoDeskPressInScene;
         private void OnPress(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
-            EndDesktopScene(true);
+            var part=FindKuronekoHit(e.GetPosition(sprite));
+            kuronekoDeskPressInScene=IsKuroneko && ShowingDesktopScene;
+            if(part.Target==KuronekoTarget.None && !kuronekoDeskPressInScene) EndDesktopScene(true);
             if (e.ClickCount >= 2)
             {
                 pendingClickAt = 0;
+                EndDesktopScene(true);
+                kuronekoDeskPressInScene=false;
+                ClearKuronekoMoment();
                 app.Open("home");
                 return;
             }
@@ -416,6 +427,7 @@ namespace DeskMate
             pressWindow.Y = r.Top;
             dragging = false;
             pressing = sprite.CaptureMouse();
+            if(IsKuroneko){if(pressing)kuronekoClicks.Begin(part);else kuronekoClicks.Cancel();}
         }
 
         private void OnMove(object sender, MouseEventArgs e)
@@ -430,6 +442,8 @@ namespace DeskMate
             if (!dragging && Math.Abs(dx) + Math.Abs(dy) < 6) return;
             if (!dragging)
             {
+                if(IsKuroneko)EndDesktopScene(false);
+                ClearKuronekoMoment();
                 ClearWindowPerch(false);
                 lastDropProbe=-1000;
                 lastDropAvailable=false;
@@ -447,15 +461,25 @@ namespace DeskMate
         private void OnRelease(object sender, MouseButtonEventArgs e)
         {
             if (!pressing) return;
+            bool deskScenePress=kuronekoDeskPressInScene;
+            kuronekoDeskPressInScene=false;
             bool moved = dragging;
             pressing = dragging = false;
-            sprite.ReleaseMouseCapture();
+            kuronekoOwnRelease=true;
+            try{sprite.ReleaseMouseCapture();}finally{kuronekoOwnRelease=false;}
+            bool special=false;
+            if(IsKuroneko && !moved)
+            {
+                special=kuronekoClicks.End(FindKuronekoHit(e.GetPosition(sprite)),clock.ElapsedMilliseconds,Forms.SystemInformation.DoubleClickTime,
+                    kuronekoStory.Beat==ManuscriptBeat.Offer?kuronekoStory.Until:long.MaxValue);
+                if(special)pendingClickAt=0;
+            }
             if (moved)
             {
                 PerchBadge(false);
                 if(!TryPerchDrop(true))FinishDragMotion();
             }
-            else if(!perchAligned)pendingClickAt = clock.ElapsedMilliseconds + Forms.SystemInformation.DoubleClickTime;
+            else if(!perchAligned && !special && !deskScenePress)pendingClickAt = clock.ElapsedMilliseconds + Forms.SystemInformation.DoubleClickTime;
             e.Handled = true;
         }
 
@@ -514,7 +538,7 @@ namespace DeskMate
         private void Tick(object sender, EventArgs e)
         {
             long now = clock.ElapsedMilliseconds;
-            if(worldTick!=0 && now-worldTick>12000){EndDesktopScene(true);ForgetPerformance();EndVisit();RefreshRoutinePace();}
+            if(worldTick!=0 && now-worldTick>12000){ClearKuronekoMoment();EndDesktopScene(true);ForgetPerformance();EndVisit();RefreshRoutinePace();}
             worldTick=now;
             if(interrupted!=null && now-interrupted.InterruptedAt>MaxInterruption.TotalMilliseconds)
             {interrupted=null;parkedProp.Source=null;}
@@ -529,12 +553,14 @@ namespace DeskMate
                 }
                 if (IsVisible && !pressing) ClampCurrent();
             }
-            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene || (ShowingSteveMining && focusCue.Pending) ? 34 : 80);
+            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene ||
+                (IsKuroneko && kuronekoClip!=null) || (ShowingSteveMining && focusCue.Pending) ? 34 : 80);
             RefreshKaraokeOverlay();
-            if (!IsVisible) { PresentFocusCompanion(now,false); EndDesktopScene(true); EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            if (!IsVisible) { ClearKuronekoMoment(); PresentFocusCompanion(now,false); EndDesktopScene(true); EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
             // The perch timer owns the sprite while seated. Ordinary idle and
             // transient prop animations must not fight over the same image.
             if(perchAligned)return;
+            if(RenderKuroneko(now,false,false))return;
             if(AdvanceDesktopScene(now))return;
             parkedProp.Visibility=interrupted!=null && interrupted.Bridge=="guitarbridge" && (PlayingGuitarToMusic || MusicPaperGuitar)
                 ?Visibility.Hidden:Visibility.Visible;
@@ -566,8 +592,8 @@ namespace DeskMate
                 if (!pressing && PlayingGuitarToMusic && TakeStandingGuitar("musicpickup")) return;
                 if (!pressing && AnimateKaraoke(now)) return;
                 if(ResumePerformance(now))return;
-                if(!dragging && !pressing && TryStartDesktopScene(now))return;
-                if (!MusicPlaying && now >= ambientAt && !pressing) {Ambient();if(activePoses!=null || visitor!=null)return;}
+                if(!dragging && !pressing && !kuronekoClicks.HasPending && TryStartDesktopScene(now))return;
+                if (!MusicPlaying && now >= ambientAt && !pressing && !kuronekoClicks.HasPending) {Ambient();if(activePoses!=null || visitor!=null)return;}
                 if (row == Idle && !pressing && TryLook(now)) return;
             }
             int frame = (int)(((now - shownSince) / FrameMs[row]) % Counts[row]);
@@ -591,6 +617,13 @@ namespace DeskMate
             if (!GetCursorPos(out p) || !sprite.IsVisible) return false;
             Point eye = sprite.PointToScreen(new Point(sprite.ActualWidth * .50, sprite.ActualHeight * .37));
             double dx = p.X - eye.X, dy = p.Y - eye.Y;
+            if(IsKuroneko)
+            {
+                int look=kuronekoGaze.Look(now,dx,dy,sprite.ActualWidth,KuronekoMayInteract() && !kuronekoClicks.HasPending);
+                if(look<0)return false;
+                DrawFrame(9+look/8,look%8);
+                return true;
+            }
             double distance = Math.Sqrt(dx * dx + dy * dy);
             if (distance < 24 || distance > Math.Max(105, sprite.ActualWidth * 1.45))
             { nearbySince = 0; return false; }

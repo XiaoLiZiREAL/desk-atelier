@@ -61,6 +61,7 @@ namespace DeskMate
             {"turnstep",new ActionScore(80,90,100,110,120,140)},
             {"penbridge",new ActionScore(80,90,100,100,110,90)},
             {"toolbridge",new ActionScore(80,90,100,100,110,90)},
+            {"authorcarry",new ActionScore(90,110,95,140,110,90)},
             {"tune",new ActionScore(480,960,460,670,950,800)},
             {"mutepractice",new ActionScore(new[]{0,1,2,3,2,3,4,1,2,3,4,5},new[]{620,480,250,290,240,300,560,420,260,310,560,800})},
             {"stringwipe",new ActionScore(new[]{0,1,2,3,2,3,4,5},new[]{650,560,720,650,620,670,830,780})},
@@ -77,6 +78,8 @@ namespace DeskMate
         };
         internal static readonly string[] Names=scores.Keys.ToArray();
         internal static readonly ActionScore TuneAfterBow=new ActionScore(new[]{1,2,3,2,5},new[]{400,560,520,500,680});
+        internal static readonly ActionScore KuronekoRest=new ActionScore(350,510,930,870,470,500);
+        internal static readonly ActionScore KuronekoReturnNote=new ActionScore(420,480,470,740,360,490);
         // 0–5 are her partner-facing drawings; 6, 7, 8 play a downstroke, lift and second stroke.
         internal static readonly ActionScore RehearsalLead=new ActionScore(
             new[]{0,1,2,6,7,8,4,3,5},new[]{3550,500,550,320,180,600,900,3050,1550});
@@ -116,6 +119,7 @@ namespace DeskMate
         static readonly string[] stageDay={"hatbow","stageribbon","mutepractice","tea","curtaincall","focus","visit","curtaincall",
                                           "listenbeat","stageribbon","tune","rest","leafcheck","quietrest","hatbow","visit",
                                           "stringwipe","stageribbon","game","curtaincall"};
+        static readonly string[] kuronekoDay={"focus","tea","rest","game","focus","visit","rest","tea","game","focus"};
         static readonly string[] guestDay={"tea","game","focus","rest","visit","tea","focus","game","rest"};
         static readonly string[] guestMinerDay={"mine","game","tea","focus","rest","mine","visit","tea","game"};
         static readonly TimeSpan MaxInterruption=TimeSpan.FromMinutes(12);
@@ -155,7 +159,7 @@ namespace DeskMate
                     BitmapSource bitmap;
                     using(var file=File.OpenRead(path))bitmap=new PngBitmapDecoder(file,BitmapCreateOptions.IgnoreColorProfile,BitmapCacheOption.OnLoad).Frames[0];
                     if(bitmap.CanFreeze)bitmap.Freeze();
-                    const int celCount=6;
+                    int celCount=artId=="kuroneko" && key=="listenbeat"?8:6;
                     if(bitmap.PixelWidth==1152 && bitmap.PixelHeight==208*((celCount+5)/6))
                     {
                         clips=new BitmapSource[celCount];
@@ -251,6 +255,8 @@ namespace DeskMate
         {
             if(disposed || app.Data.Quiet || !IsVisible || manuallyHidden || fullscreenHidden)return;
             EndVisit();
+            ClearKuronekoMoment();
+            if(QueueKuronekoSeatedNote(returning)){RefreshKaraokeOverlay();return;}
             bool guitarInHand=UsesMutsumiActions && dancing && PlayingGuitarToMusic;
             StopSongMovement();
             ParkMusicGuitar(guitarInHand);
@@ -267,13 +273,14 @@ namespace DeskMate
         }
         internal void OpeningTool()
         {
+            ClearKuronekoMoment();
             EndDesktopScene(true);
             EndIndependentVisit();
             if(independentPerformance)InterruptPerformance();
         }
         void ReleaseCharacterActions(string old)
         {
-            if(old==null || (old!="mutsumi" && CompanionArchive.IsBuiltin(old)))return;
+            if(old==null || (old!="mutsumi" && old!="kuroneko" && CompanionArchive.IsBuiltin(old)))return;
             foreach(string key in ActionScore.Names){authored.Remove(old+"|"+key);floorDrawings.Remove(old+"|"+key);}
         }
         bool AdvancePerformance(long now)
@@ -290,6 +297,8 @@ namespace DeskMate
                 }
             }
             var score=bowTuning?ActionScore.TuneAfterBow:ActionScore.For(performance);
+            if(IsKuroneko && performance=="rest")score=ActionScore.KuronekoRest;
+            if(IsKuroneko && performance=="returnnote")score=ActionScore.KuronekoReturnNote;
             if(performance=="quietrest" && activePoses.Length==11)score=ActionScore.QuietRestWithStool;
             if(t>=score.Duration){FinishPerformance();return false;}
             int pose=score.At(t);
@@ -313,6 +322,7 @@ namespace DeskMate
                     case "kurisu": return app.Data.LabRoutine;
                     case "steve": return app.Data.MinerRoutine;
                     case "hitori": return app.Data.GuitarRoutine;
+                    case "kuroneko": return app.Data.KuronekoRoutine;
                     case "mutsumi": return currentArtId=="mutsumi-stage"?app.Data.MutsumiStageRoutine:app.Data.MutsumiRoutine;
                     default: return app.Data.GuestRoutine;
                 }
@@ -323,6 +333,7 @@ namespace DeskMate
                     case "kurisu": app.Data.LabRoutine=value;break;
                     case "steve": app.Data.MinerRoutine=value;break;
                     case "hitori": app.Data.GuitarRoutine=value;break;
+                    case "kuroneko": app.Data.KuronekoRoutine=value;break;
                     case "mutsumi":
                         if(currentArtId=="mutsumi-stage")app.Data.MutsumiStageRoutine=value;
                         else app.Data.MutsumiRoutine=value;
@@ -374,7 +385,7 @@ namespace DeskMate
         bool AdvanceDesktopScene(long now)
         {
             if(!ShowingDesktopScene)return false;
-            if(perchTarget!=IntPtr.Zero || desktopSceneArt!=currentArtId || CompanionOccupied() ||
+            if(perchTarget!=IntPtr.Zero || desktopSceneArt!=currentArtId || CompanionOccupied(IsKuroneko) ||
                 PerformingPaper || (app.FocusActive && !app.FocusPaused && !HasFocusCostume))
             {EndDesktopScene(true);return false;}
             if(currentArtId=="mutsumi")
@@ -424,9 +435,9 @@ namespace DeskMate
                 (app.NotesDesk!=null && app.NotesDesk.IsVisible && !app.NotesDesk.KeepsStickyOpen);
         }
         bool MusicPlaying { get { return (app.Music!=null && app.Music.Playing) || (lyricPlaying && KaraokeVisible); } }
-        bool CompanionOccupied()
+        bool CompanionOccupied(bool ignorePress=false)
         {
-            return app.Data.Quiet || !IsVisible || manuallyHidden || fullscreenHidden || visitor!=null || dragging || pressing ||
+            return app.Data.Quiet || !IsVisible || manuallyHidden || fullscreenHidden || visitor!=null || dragging || (pressing && !ignorePress) ||
                 pendingClickAt>0 || ToolOpen() || MusicPlaying;
         }
         string[] DailyRoutine()
@@ -438,6 +449,7 @@ namespace DeskMate
                 case "kurisu":return labDay;
                 case "steve":return minerDay;
                 case "rem":return maidDay;
+                case "kuroneko":return kuronekoDay;
             }
             if(UsesStageActions)return stageDay;
             if(UsesMutsumiActions)return mutsumiDay;

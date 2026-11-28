@@ -6,14 +6,14 @@ namespace DeskMate
     // time actually spent on screen advances the scene.
     internal sealed class FocusCompanionCue
     {
-        static readonly string[] Roles={"kurisu","rem","hitori","mutsumi","mutsumi-stage","steve"};
+        static readonly string[] Roles={"kurisu","rem","hitori","mutsumi","mutsumi-stage","steve","kuroneko"};
         static readonly int[][] Frames={
             new[]{0,1,2,3,2,3,4,3},
             new[]{0,1,2,3,3,5,5,0},
             new[]{0,1,2,3,4,2,4,5},
             new[]{0,1,2,3,2,3,4,5},
             new[]{0,1,2,3,2,3,4,5},
-            new[]{0,1,2,3,4,5}
+            new[]{0,1,2,3,4,5},new[]{0,1,2,3,2,3,4,5}
         };
         static readonly int[][] Holds={
             new[]{550,540,1050,2300,4800,1800,1700,7300},
@@ -21,7 +21,7 @@ namespace DeskMate
             new[]{450,700,860,900,740,1550,1700,8800},
             new[]{680,680,820,1500,5550,1360,1000,7600},
             new[]{580,880,990,1630,5300,1460,1250,8900},
-            new[]{400,210,155,280,500,4600}
+            new[]{400,210,155,280,500,4600},new[]{520,480,1100,1920,780,2050,1250,7400}
         };
         MineShift mineShift=new MineShift(0);
         internal int MineVariant { get; private set; }

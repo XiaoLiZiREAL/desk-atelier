@@ -13,9 +13,13 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.11.1.0")]
-[assembly: AssemblyFileVersion("1.11.1.0")]
-[assembly: AssemblyInformationalVersion("1.11.1")]
+[assembly: AssemblyVersion("1.12.0.0")]
+[assembly: AssemblyFileVersion("1.12.0.0")]
+#if DESKATELIER_PREVIEW
+[assembly: AssemblyInformationalVersion("1.12.0-kuroneko.preview")]
+#else
+[assembly: AssemblyInformationalVersion("1.12.0")]
+#endif
 
 namespace DeskMate
 {
@@ -39,7 +43,7 @@ namespace DeskMate
             try
             {
 #if DESKATELIER_PREVIEW
-                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-StevePackPreview-111");
+                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-KuronekoPreview-S1");
                 Environment.SetEnvironmentVariable("DESKATELIER_DATA",data);
 #else
                 string data=Environment.GetEnvironmentVariable("DESKATELIER_DATA");
@@ -94,6 +98,7 @@ namespace DeskMate
                     case "rem": return "蕾姆";
                     case "hitori": return "后藤独";
                     case "mutsumi": return "若叶睦";
+                    case "kuroneko": return "黑猫";
                     default: return CustomName(Data.Character) ?? "伙伴";
                 }
             }

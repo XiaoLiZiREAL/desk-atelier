@@ -172,7 +172,14 @@ namespace DeskMate
             var cup=independentPerformance && HoldingCup(now-performanceStart)?ActionFrames(character,"propbridge"):null;
             carriedPose=independentPerformance?sprite.Source as BitmapSource:null;
             ClearBridge();
-            if(cup!=null)
+            var novel=IsKuroneko && (independentPerformance && (performance=="focus" || performance.StartsWith("project",StringComparison.Ordinal)))?
+                ActionFrames(character,"authorcarry"):null;
+            if(novel!=null)
+            {
+                carriedPose=novel[2];
+                BeginBridge("holdbook",novel,0,2);
+            }
+            else if(cup!=null)
             {
                 carriedPose=cup[2];
                 BeginBridge("holdcup",cup,1,2);

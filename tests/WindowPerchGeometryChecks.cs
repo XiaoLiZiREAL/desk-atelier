@@ -268,6 +268,15 @@ namespace DeskMate
                     WindowPerchMotion.DesktopFrameAt(duration-475,role)==5,"entrance and ending each hold rather than flash");
             }
             Need(WindowPerchMotion.SceneDuration("steve")==5100,"keep the accepted Steve timing");
+            Need(WindowPerchMotion.PoseCount("kuroneko",PerchMode.Scene)==12 &&
+                WindowPerchMotion.DesktopFrameAt(2880,"kuroneko")==5 &&
+                WindowPerchMotion.DesktopFrameAt(6279,"kuroneko")==5 &&
+                WindowPerchMotion.DesktopFrameAt(6280,"kuroneko")==6,
+                "Kuroneko writes for a full beat before closing the book");
+            Need(WindowPerchMotion.DesktopFrameAt(8359,"kuroneko")==10 &&
+                WindowPerchMotion.DesktopFrameAt(8899,"kuroneko")==11 &&
+                WindowPerchMotion.DesktopFrameAt(8900,"kuroneko")==-1,
+                "Kuroneko comes to her feet before ordinary idle resumes");
             const long fruitReady=1000000;
             Need(!ProjectPlantTimeline.HasRipeCucumber(0,0,fruitReady),"no fruit on first empty/seedling stage");
             Need(!ProjectPlantTimeline.HasRipeCucumber(1,fruitReady-1,fruitReady),"seedling/vine phase is not ripe");
@@ -394,6 +403,19 @@ namespace DeskMate
                 Need(lifted>=4800 && lifted<=8500,"extended, unhurried foot swings");
                 Need(rhythms.Add(cue.ToString()),"each outfit plays a distinct prone sequence");
             }
+            Need(WindowSeatRoutine.KuronekoPauseAt(0,true).Frame==6 &&
+                 WindowSeatRoutine.KuronekoPauseAt(1500,true).Frame==9 &&
+                 WindowSeatRoutine.KuronekoPauseAt(4650,true).Frame==10 &&
+                 WindowSeatRoutine.KuronekoPauseAt(2000,false).Frame==3,
+                 "Kuroneko side and prone are separate whole-cel timelines");
+            bool swingEnded;
+            Need(!WindowSeatRoutine.KuronekoSwingAt(0,out swingEnded).Swing && !swingEnded,
+                 "Kuroneko waits before moving feet");
+            Need(WindowSeatRoutine.KuronekoSwingAt(660,out swingEnded).Frame==2 && !swingEnded,
+                 "the first foot reaches its own peak");
+            Need(!WindowSeatRoutine.KuronekoSwingAt(1150,out swingEnded).Swing && !swingEnded &&
+                 WindowSeatRoutine.KuronekoSwingAt(1860,out swingEnded).Frame==6,
+                 "both feet settle before the other foot moves");
             Console.WriteLine(count+" window perch geometry and motion checks passed");
         }
     }

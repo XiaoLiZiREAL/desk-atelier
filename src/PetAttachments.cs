@@ -128,6 +128,12 @@ namespace DeskMate
         sealed class PetSprite : Image
         {
             public Func<Point, bool> AttachmentAt;
+            bool passThroughTransparent;
+            internal void SetCharacterAlphaHit(bool enabled)
+            {
+                passThroughTransparent=enabled;
+                hitFrame=hitPixels=null;
+            }
             BitmapSource hitFrame, hitPixels;
             readonly byte[] sample = new byte[4];
 
@@ -143,7 +149,7 @@ namespace DeskMate
             {
                 Point p = hit.HitPoint;
                 var frame = Source as BitmapSource;
-                if (frame != null && RenderSize.Width > 0 && RenderSize.Height > 0 && AttachmentAt != null && AttachmentAt(p))
+                if (frame != null && RenderSize.Width > 0 && RenderSize.Height > 0 && (passThroughTransparent || AttachmentAt!=null && AttachmentAt(p)))
                 {
                     if (frame != hitFrame) { hitFrame = frame; hitPixels = Readable(frame); }
                     int x = Math.Max(0, Math.Min(frame.PixelWidth-1, (int)(p.X * frame.PixelWidth / RenderSize.Width)));

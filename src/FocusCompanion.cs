@@ -20,6 +20,7 @@ namespace DeskMate
         {
             steveMiningForSession=app.SteveMining.Available;
             focusCue.Start(random.Next());
+            if(IsKuroneko)ClearKuronekoMoment();
             EndIndependentVisit();
             // An unfinished game invitation is not a scene that should block
             // focus; ordinary finite authored movements keep their ending.
@@ -40,7 +41,7 @@ namespace DeskMate
             if(!app.FocusActive && focusCue.Pending)focusCue.Stop(false);
             bool available=focusCue.Pending && HasFocusCostume && IsVisible && !manuallyHidden &&
                 !fullscreenHidden && !perchCovered && !pressing && !dragging && visitor==null &&
-                !app.Data.Quiet && !MusicPlaying && !PerformingPaper &&
+                !app.Data.Quiet && (IsKuroneko || !MusicPlaying) && !PerformingPaper &&
                 (quickMenu==null || !quickMenu.IsOpen) && !menu.Visible;
             var entry=focusCue.Pending && !perchAligned && HasFocusCostume?ActionFrames(character,"focusmate-entry"):null;
             int frame=focusCue.Step(currentArtId,now,available && ready,app.FocusPaused,entry!=null);

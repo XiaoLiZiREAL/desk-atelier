@@ -7,19 +7,21 @@ namespace DeskMate
     internal static class WindowPerchMotion
     {
         internal const double EdgeY=132.0/208.0;
-        static readonly string[] Roles={"hitori","rem","kurisu","mutsumi","mutsumi-stage","steve"};
+        static readonly string[] Roles={"hitori","rem","kurisu","mutsumi","mutsumi-stage","steve","kuroneko"};
         static readonly int[][] EdgeMs={
             new[]{600,570,260,330,480,1130},new[]{540,550,640,360,590,710},new[]{490,380,820,380,440,620},
             new[]{400,350,420,360,510,780},new[]{600,390,630,480,360,610},
-            new[]{160,105,95,95,87,200,95,95,95,150,110,100,180,100,110,160}};
+            new[]{160,105,95,95,87,200,95,95,95,150,110,100,180,100,110,160},new[]{360,430,620,440,530,750}};
         // A different pace for each story: legible entrance, a held payoff, and
         // a readable exit. Keep the original source cels sharp instead of blending.
         static readonly int[][] SceneMs={
             new[]{760,620,590,1520,760,1050},new[]{800,650,850,1400,820,780},new[]{750,680,650,1470,830,820},
-            new[]{810,770,1240,960,730,690},new[]{760,750,690,1380,860,860}};
+            new[]{810,770,1240,960,730,690},new[]{760,750,690,1380,860,860},new int[0],
+            new[]{680,520,680,420,580,3400,510,480,360,310,420,540}};
         internal static int PoseCount(string art,PerchMode mode)
         {
             if(!Supports(art))return 0;
+            if(art=="kuroneko" && mode==PerchMode.Scene)return 12;
             if(art!="steve")return 6;
             return mode==PerchMode.Edge?16:85;
         }
@@ -67,7 +69,7 @@ namespace DeskMate
 
         internal static bool Supports(string art)
         {
-            return art=="hitori" || art=="rem" || art=="kurisu" || art=="mutsumi" || art=="mutsumi-stage" || art=="steve";
+            return art=="hitori" || art=="rem" || art=="kurisu" || art=="mutsumi" || art=="mutsumi-stage" || art=="steve" || art=="kuroneko";
         }
         static int Total(int[] durations)
         {
@@ -170,13 +172,41 @@ namespace DeskMate
         static readonly int[][] Lengths={new[]{130},new[]{100,220,210,140},new[]{110,240,210,150},
             new[]{120,190,180,190,200},new[]{120,235,215,160}};
         static readonly int[] VanillaChoices={1,2,4};
-        internal WindowSeatRoutine(string role,int seed,long now,bool haveLounge=false,bool haveSwing=false)
+        readonly bool kuronekoProne;
+        static readonly int[] KuronekoSideHolds={240,370,420,5500,420,690};
+        static readonly int[] KuronekoProneHolds={340,350,380,3300,600,1350,270,310,530};
+        static readonly int[] KuronekoProneFrames={6,7,8,9,10,9,8,7,11};
+        static readonly int[] KuronekoSwingFrames={-1,0,1,2,3,0,-1,4,5,6,7,4,-1};
+        static readonly int[] KuronekoSwingHolds={360,115,140,225,135,125,420,115,135,215,150,115,540};
+        internal static SeatPose KuronekoPauseAt(long t,bool prone)
+        {
+            int[] holds=prone?KuronekoProneHolds:KuronekoSideHolds;
+            for(int i=0;i<holds.Length;i++)
+            {
+                if(t<holds[i])return new SeatPose(false,prone?KuronekoProneFrames[i]:i,true);
+                t-=holds[i];
+            }
+            return new SeatPose(false,0);
+        }
+        internal static SeatPose KuronekoSwingAt(long t,out bool ended)
+        {
+            ended=false;
+            for(int i=0;i<KuronekoSwingHolds.Length;i++)
+            {
+                int frame=KuronekoSwingFrames[i], hold=KuronekoSwingHolds[i];
+                if(t<hold)return frame<0?new SeatPose(false,0):new SeatPose(false,frame,false,true);
+                t-=hold;
+            }
+            ended=true;return new SeatPose(false,0);
+        }
+        internal WindowSeatRoutine(string role,int seed,long now,bool haveLounge=false,bool haveSwing=false,bool haveKuronekoProne=false)
         {
             this.role=role;
             mood=Array.IndexOf(new[]{"hitori","rem","kurisu","mutsumi","mutsumi-stage"},role);
             vanilla=role=="steve";
             canLounge=haveLounge && !vanilla;
             canSwing=haveSwing && !vanilla;
+            kuronekoProne=haveKuronekoProne;
             random=new Random(seed);
             Reset(now);
         }
@@ -188,6 +218,10 @@ namespace DeskMate
             next=now+random.Next(3100,5101);
             if(canLounge){nextLounge=now+random.Next(35000,60001);proneNext=random.Next(2)==1;}
         }
+        internal void InterruptForGesture(long now)
+        {
+            eventKind=-1;next=now+3400;previous=now;
+        }
         internal SeatPose At(long now,bool quiet,bool holdNewActivity=false)
         {
             if(previous>=0 && (now<previous || now-previous>12500))Reset(now);
@@ -197,7 +231,7 @@ namespace DeskMate
             {
                 if(canLounge && !quiet && now>=nextLounge)
                 {
-                    eventKind=proneNext?7:6;
+                    eventKind=proneNext && (role!="kuroneko" || kuronekoProne)?7:6;
                     proneNext=!proneNext;
                     nextLounge=now+random.Next(72000,116001);
                 }
@@ -219,6 +253,13 @@ namespace DeskMate
             long t=now-start;
             if(eventKind>=6)
             {
+                if(role=="kuroneko")
+                {
+                    SeatPose pause=KuronekoPauseAt(t,eventKind==7);
+                    if(pause.Lounge)return pause;
+                    eventKind=-1;next=now+3500;
+                    return new SeatPose(false,0);
+                }
                 bool stageProne=eventKind==7 && mood==4;
                 int[] cels=eventKind==6?SideCels:stageProne?StageProneCels:ProneCels;
                 for(int i=0;i<cels.Length;i++)
@@ -231,7 +272,13 @@ namespace DeskMate
             }
             else if(eventKind==3 && canSwing)
             {
-                for(int i=0;i<SwingCels.Length;i++)
+                if(role=="kuroneko")
+                {
+                    bool ended;
+                    SeatPose swing=KuronekoSwingAt(t,out ended);
+                    if(!ended)return swing;
+                }
+                else for(int i=0;i<SwingCels.Length;i++)
                 {
                     int ms=SwingDuration(i,mood),frame=SwingFrame(i,mood);
                     if(t<ms)return frame<0?new SeatPose(false,0):new SeatPose(false,frame,false,true);
