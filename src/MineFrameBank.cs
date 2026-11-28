@@ -84,6 +84,7 @@ namespace DeskMate
             try{bank=new MineFrameBank(path);}
             catch(IOException){bank=null;}
             catch(InvalidDataException){bank=null;}
+            catch(UnauthorizedAccessException){bank=null;}
             ready[variant]=bank;order.Enqueue(variant);
             if(order.Count>2)ready.Remove(order.Dequeue());
             return bank;

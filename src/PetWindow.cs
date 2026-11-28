@@ -529,7 +529,7 @@ namespace DeskMate
                 }
                 if (IsVisible && !pressing) ClampCurrent();
             }
-            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene || (currentArtId=="steve" && focusCue.Pending) ? 34 : 80);
+            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene || (ShowingSteveMining && focusCue.Pending) ? 34 : 80);
             RefreshKaraokeOverlay();
             if (!IsVisible) { PresentFocusCompanion(now,false); EndDesktopScene(true); EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
             // The perch timer owns the sprite while seated. Ordinary idle and

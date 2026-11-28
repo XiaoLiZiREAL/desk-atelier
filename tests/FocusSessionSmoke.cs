@@ -27,16 +27,39 @@ static class FocusSessionSmoke
             }
         }
         var caves=typeof(Studio).Assembly.GetManifestResourceNames().Where(n=>n.Contains("-focuscave-")).ToArray();
-        Need(caves.Length==18,"18 cave scene and behavior combinations embedded");
-        foreach(string name in caves)
-            using(var input=new BinaryReader(File.OpenRead(app.Asset(name.Substring(4)))))
+        Need(caves.Length==0,"No Steve mining assets embedded in the lean app");
+        Need(!File.Exists(app.Asset("motion-steve-focuscave-torch-pass.dca")),"Fresh install has no hidden copy of the optional assets");
+        Need(true,"WPF peer focus strips verified");
+        if(args.Length>1)
+        {
+            const BindingFlags flags=BindingFlags.NonPublic|BindingFlags.Instance;
+            object pack=typeof(Studio).GetField("SteveMining",flags).GetValue(app);
+            Type packType=pack.GetType();
+            var available=packType.GetProperty("Available",flags);
+            Need(!(bool)available.GetValue(pack,null),"fresh Steve build needs no expansion");
+            packType.GetMethod("Install",flags).Invoke(pack,new object[]{Path.GetFullPath(args[1])});
+            Need((bool)available.GetValue(pack,null),"installation is visible to the running application");
+            var locate=(Func<string,string>)Delegate.CreateDelegate(typeof(Func<string,string>),pack,packType.GetMethod("Locate",flags));
+            var cacheType=typeof(Studio).Assembly.GetType("DeskMate.MineFrameCache",true);
+            object cache=Activator.CreateInstance(cacheType,flags,null,new object[]{locate},null);
+            var get=cacheType.GetMethod("Get",flags);
+            for(int variant=0;variant<18;variant++)
             {
-                if(!name.EndsWith(".dca") || new string(input.ReadChars(8))!="DACAVE01" ||
-                    input.ReadInt32()!=192 || input.ReadInt32()!=208 || input.ReadInt32()!=252)
-                    throw new Exception(name);
+                object bank=get.Invoke(cache,new object[]{variant});
+                if(bank==null)throw new Exception("Cave bank missing after install: "+variant);
+                var draw=bank.GetType().GetMethod("Draw",flags);
+                foreach(int frame in new[]{0,50,110,180,251})
+                {
+                    var image=(BitmapSource)draw.Invoke(bank,new object[]{frame});
+                    if(image.PixelWidth!=192 || image.PixelHeight!=208)throw new Exception("Decoded wrong frame dimensions");
+                }
             }
-        Need(true,"WPF sprite and packed mine resource headers verified");
+            Need(true,"All 18 optional cave banks decode sample frames in WPF");
+            packType.GetMethod("Uninstall",flags).Invoke(pack,null);
+            Need(!(bool)available.GetValue(pack,null),"uninstall takes effect without touching the application data");
+        }
         int count=app.Data.FocusCount,total=app.Data.FocusMinutesTotal;
+        app.Data.Character="steve";
         app.StartFocus(2); Need(app.FocusActive && app.RemainingSeconds>115,"start uses existing focus session");
         app.PauseFocus(); int remaining=app.RemainingSeconds;
         System.Threading.Thread.Sleep(1100);

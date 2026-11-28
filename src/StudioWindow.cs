@@ -154,7 +154,7 @@ namespace DeskMate
                 BorderBrush=Ui.Color(Ui.Line),Child=content,Margin=new Thickness(0,0,0,3)};
         }
 
-        bool collectionOpen,appearanceOpen,privacyOpen;
+        bool collectionOpen,appearanceOpen,privacyOpen,steveFocusOpen;
         string nicknameDraft;
         UIElement SettingsPage()
         {
@@ -183,6 +183,7 @@ namespace DeskMate
             }
             settings.Children.Add(pair);
             settings.Children.Add(CompactDetails("导入与切换其他角色",ImportedCompanionCard(),collectionOpen,v=>collectionOpen=v));
+            settings.Children.Add(CompactDetails("史蒂夫专注动画（可选）",SteveFocusPackCard(),steveFocusOpen,v=>steveFocusOpen=v));
             var pace=new ComboBox{ItemsSource=new[]{"安静一些","自然","活泼"},MinHeight=30,MinWidth=100,
                 VerticalContentAlignment=VerticalAlignment.Center,Margin=new Thickness(8,0,0,0)};
             pace.SelectedIndex=app.Data.ActivityPace=="calm"?0:app.Data.ActivityPace=="lively"?2:1;

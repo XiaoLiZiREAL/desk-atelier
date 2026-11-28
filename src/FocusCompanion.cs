@@ -7,13 +7,18 @@ namespace DeskMate
     {
         readonly FocusCompanionCue focusCue=new FocusCompanionCue();
         MineFrameCache mineFrames;
+        // Installing mid-session must not cause the animation to jump in.
+        bool steveMiningForSession;
+        internal void RefreshSteveFocusPack(){mineFrames=null;steveMiningForSession=false;}
+        bool ShowingSteveMining { get { return currentArtId=="steve" && steveMiningForSession && app.SteveMining.Available; } }
         string FocusMateCostume { get { return perchAligned?"focusmate":"focusmate-desk"; } }
         bool HasFocusCostume { get { return FocusCompanionCue.Supports(currentArtId) &&
-            (currentArtId=="steve"?System.IO.File.Exists(app.Asset("motion-steve-focuscave-torch-pass.dca")):
+            (currentArtId=="steve"?ShowingSteveMining:
              ActionFrames(character,FocusMateCostume)!=null); } }
         bool testPhoneWave;
         internal void FocusSessionStarted()
         {
+            steveMiningForSession=app.SteveMining.Available;
             focusCue.Start(random.Next());
             EndIndependentVisit();
             // An unfinished game invitation is not a scene that should block
@@ -43,12 +48,12 @@ namespace DeskMate
             string costume=FocusMateCostume;
             if(currentArtId=="steve")
             {
-                if(mineFrames==null)mineFrames=new MineFrameCache(app.Asset);
+                if(mineFrames==null)mineFrames=new MineFrameCache(app.SteveMining.Locate);
                 var bank=mineFrames.Get(focusCue.MineVariant);
-                if(bank==null)return false;
+                if(bank==null){app.SteveMining.DisableBroken();return false;}
                 System.Windows.Media.Imaging.BitmapSource scene;
                 try{scene=bank.Draw(frame);}
-                catch(System.IO.InvalidDataException){return false;}
+                catch(System.IO.InvalidDataException){app.SteveMining.DisableBroken();return false;}
                 if(perchAligned)backpackButton.Visibility=Visibility.Collapsed;
                 parkedProp.Visibility=parkedMusicGuitar.Visibility=Visibility.Collapsed;
                 if(!Object.ReferenceEquals(sprite.Source,scene))ShowPose(scene);

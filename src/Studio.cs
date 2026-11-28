@@ -13,9 +13,9 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.11.0.0")]
-[assembly: AssemblyFileVersion("1.11.0.0")]
-[assembly: AssemblyInformationalVersion("1.11.0")]
+[assembly: AssemblyVersion("1.11.1.0")]
+[assembly: AssemblyFileVersion("1.11.1.0")]
+[assembly: AssemblyInformationalVersion("1.11.1")]
 
 namespace DeskMate
 {
@@ -39,7 +39,7 @@ namespace DeskMate
             try
             {
 #if DESKATELIER_PREVIEW
-                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-FocusPreview-110g");
+                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-StevePackPreview-111");
                 Environment.SetEnvironmentVariable("DESKATELIER_DATA",data);
 #else
                 string data=Environment.GetEnvironmentVariable("DESKATELIER_DATA");
@@ -101,6 +101,7 @@ namespace DeskMate
         readonly string folder;
         public string UserFolder { get { return folder; } }
         readonly string assetFolder;
+        internal readonly SteveFocusPack SteveMining;
         public bool Exiting { get; private set; }
         readonly DispatcherTimer ticks = new DispatcherTimer();
         readonly Random random = new Random();
@@ -110,6 +111,7 @@ namespace DeskMate
         public Studio(string folder)
         {
             this.folder = folder;
+            SteveMining=new SteveFocusPack(folder);
             assetFolder = Path.Combine(folder,"art",typeof(Studio).Module.ModuleVersionId.ToString("N"));
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             Data = Store.Load();

@@ -454,6 +454,7 @@ namespace DeskMate
             if(app.FocusActive && !app.FocusPaused)
             {
                 if(HasFocusCostume)return;
+                if(currentArtId=="steve"){ambientAt=now+36000;return;}
                 if(!BeginPerformance("focus",false))SetEffect(Work,4200);
                 ambientAt=now+36000;return;
             }
