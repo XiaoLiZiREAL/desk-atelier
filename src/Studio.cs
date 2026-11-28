@@ -13,9 +13,9 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.10.11.0")]
-[assembly: AssemblyFileVersion("1.10.11.0")]
-[assembly: AssemblyInformationalVersion("1.10.11")]
+[assembly: AssemblyVersion("1.10.15.0")]
+[assembly: AssemblyFileVersion("1.10.15.0")]
+[assembly: AssemblyInformationalVersion("1.10.15")]
 
 namespace DeskMate
 {
@@ -39,7 +39,7 @@ namespace DeskMate
             try
             {
 #if DESKATELIER_PREVIEW
-                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-WindowPreview-121");
+                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-WindowPreview-125");
                 Environment.SetEnvironmentVariable("DESKATELIER_DATA",data);
 #else
                 string data=Environment.GetEnvironmentVariable("DESKATELIER_DATA");

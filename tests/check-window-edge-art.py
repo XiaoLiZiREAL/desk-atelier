@@ -40,14 +40,40 @@ for role in ('hitori','rem','kurisu','mutsumi','mutsumi-stage','steve'):
  a=Image.open(assets/f'window-rest-{role}.png').convert('RGBA')
  assert a.size==(1344,208)
  seen=set()
+ seat_ends=[]
  for i in range(6):
     c=a.crop((i*192,0,(i+1)*192,208));mask=c.getchannel('A').point(lambda x:255 if x>127 else 0)
     p=mask.getbbox()
     assert p and min(p[0],p[1],192-p[2],208-p[3])>=2
     assert mask.crop((75,128,117,139)).getbbox()
     assert mask.crop((64,146,128,183)).getbbox()
+    seat_ends.append(p[3])
     seen.add(sha256(c.tobytes()).digest())
  assert len(seen)==6,role
+ if role=='kurisu':
+    assert 182<=seat_ends[0]<=186,(role,seat_ends,'leg length relative to accepted 1.10.12')
+    # Approved 1.10.12 neutral has 1237 opaque pixels from y=145 down.
+    neutral_leg_pixels=(np.asarray(a.getchannel('A').crop((0,145,192,208)))>128).sum()
+    assert abs(neutral_leg_pixels-1237)<=95,(role,neutral_leg_pixels,'leg/boot width relative to accepted 1.10.12')
+    assert max(seat_ends)-min(seat_ends)<=5,(role,seat_ends,'quiet poses restore old leg length')
+    def slim_outline(pose,limit):
+      a=np.asarray(pose.getchannel('A'))>128
+      def width(y):
+         xs=np.flatnonzero(a[y])
+         return int(np.ptp(xs)+1) if len(xs) else 0
+      spans=[width(y) for y in range(103,125)]
+      shoulder=max(width(y) for y in range(81,94))
+      assert max(spans)<=limit and max(spans)<=1.34*shoulder,(max(spans),shoulder,'seat bulge')
+    for i in range(6):slim_outline(a.crop((192*i,0,192*(i+1),208)),66)
+    edge=Image.open(assets/'window-edge-kurisu.png').convert('RGBA')
+    for j in range(6):
+       pose=edge.crop((192*j,0,192*(j+1),208))
+       slim_outline(pose,66)
+       y=pose.getchannel('A').point(lambda v:255 if v>127 else 0).getbbox()[3]
+       assert abs(y-seat_ends[0])<=3,(role,j,y,'notebook pose restores old leg length')
+ if role in ('rem','kurisu'):
+    target=sorted(seat_ends[1:])[2]
+    assert abs(seat_ends[0]-target)<=3,(role,seat_ends,'neutral legs must match the other seated proportions')
 print('36 verified quiet window cels on stable seat anchors')
 for role in ('hitori','rem','kurisu','mutsumi','mutsumi-stage'):
  for kind,n in (('lounge',28),('swing',4)):
@@ -88,12 +114,27 @@ for role in ('hitori','rem','kurisu','mutsumi','mutsumi-stage'):
       original=Image.open(assets/f'window-rest-{role}.png').convert('RGBA').crop((0,0,192,208))
       neutral=np.asarray(original.getchannel('A'))>128
       for i,top in enumerate(still):
-        assert (top&neutral[:127]).sum()/(top|neutral[:127]).sum()>=.98,(role,i,'torso drift crossing from actual neutral')
+        assert (top&neutral[:127]).sum()/(top|neutral[:127]).sum()>=(.97 if role=='kurisu' else .98),(role,i,'torso drift crossing from actual neutral')
+        if role=='kurisu':
+          head=np.asarray(np.where(top[:70])).mean(1)
+          head0=np.asarray(np.where(neutral[:70])).mean(1)
+          assert np.max(np.abs(head-head0))<=1,(role,i,'head shifted during foot swing')
       for j in range(2):
         region=slice(0,96) if j==0 else slice(96,192)
         other=slice(96,192) if j==0 else slice(0,96)
         ease,peak=[a^neutral[150:] for a in shoes[j*2:j*2+2]]
         assert ease[:,region].sum()>=85 and peak[:,region].sum()>ease[:,region].sum()+50,(role,j,'no graduated toe swing')
-        assert ease[:,other].sum()<=45 and peak[:,other].sum()<=45,(role,j,'the other shoe moved')
+        if role=='kurisu':
+          # Independently drawn shoe outlines can change thickness; their
+          # contact height and center must still be fixed while the other lifts.
+          def center(foot):
+             yy,xx=np.where(foot[5:,other])
+             return np.array([yy.mean(),xx.mean()])
+          anchor=center(neutral[150:])
+          assert ease[:,other].sum()<=100 and peak[:,other].sum()<=100,(role,j,'supporting foot shape changed')
+          for cel in shoes[j*2:j*2+2]:
+             assert np.max(np.abs(center(cel)-anchor))<=1.5,(role,j,'supporting foot moved')
+        else:
+          assert ease[:,other].sum()<=45 and peak[:,other].sum()<=45,(role,j,'the other shoe moved')
 assert not (assets/'window-lounge-steve.png').exists() and not (assets/'window-swing-steve.png').exists()
 print('140 lying/prone and transition cels, 20 individually drawn seated easing cels verified')

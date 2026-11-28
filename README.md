@@ -88,7 +88,7 @@
 
 ![若叶睦校音、翻谱与照看黄瓜的动作](docs/mutsumi.gif)
 
-后藤独（波奇）来自《孤独摇滚！》。她会低头练电吉他、藏拨片，听歌时也会拿起琴。点「伙伴设置 → 后藤独」就能见到她，也可以从 [1.9.0 发行页](https://github.com/XiaoLiZiREAL/desk-atelier/releases/tag/v1.9.0) 单独下载角色包。[后藤独的素材](art/hitori/)
+后藤独（波奇）来自《孤独摇滚！》。她会低头练电吉他、藏拨片，听歌时也会拿起琴。点「伙伴设置 → 后藤独」就能见到她，也可以从 [最新发行页](https://github.com/XiaoLiZiREAL/desk-atelier/releases/latest) 的 Assets 单独下载角色包。[后藤独的素材](art/hitori/)
 
 ![后藤独的练琴、喝茶和跟唱动作](docs/hitori.gif)
 
