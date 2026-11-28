@@ -74,6 +74,7 @@ namespace DeskMate
             panel.Children.Add(parkedProp);
             panel.Children.Add(parkedMusicGuitar);
             panel.Children.Add(sprite);
+            InstallPerch(panel);
 
             bubble.Background = Ui.Color("#FCFFFFFF");
             bubble.BorderBrush = Ui.Color("#D8DFE7");
@@ -99,6 +100,7 @@ namespace DeskMate
             sprite.MouseLeftButtonUp += OnRelease;
             sprite.LostMouseCapture += delegate {
                 bool moved=dragging;pressing=dragging=false;
+                PerchBadge(false);
                 if(moved)FinishDragMotion();
             };
             sprite.MouseRightButtonUp += delegate(object sender, MouseButtonEventArgs args) {
@@ -146,7 +148,9 @@ namespace DeskMate
             quietItem=new Forms.ToolStripMenuItem("安静模式",null,delegate{ToggleQuiet();});
             topItem=new Forms.ToolStripMenuItem("保持置顶",null,delegate{ToggleTopmost();});
             display.DropDownItems.Add(quietItem);display.DropDownItems.Add(topItem);
-            display.DropDownItems.Add("回到屏幕右下角",null,delegate{Reveal();PlaceDefault();RememberPosition();});
+            display.DropDownItems.Add("回到屏幕右下角",null,delegate{ClearWindowPerch(false);Reveal();PlaceDefault();RememberPosition();});
+            leavePerchItem=new Forms.ToolStripMenuItem(LeavePerchText,null,delegate{RequestPerchExit();});
+            display.DropDownItems.Add(leavePerchItem);
             visibilityItem=AddTray("收起桌宠",ToggleVisibility);
             AddTray("退出",delegate{app.Quit();});
             menu.Opening+=delegate{OpeningTool();UpdateMenu();};tray.ContextMenuStrip=menu;
@@ -205,6 +209,7 @@ namespace DeskMate
             music.Unchecked+=changeMusic;
             AddOverlay(popup,"便签","\uE70B",delegate{app.Open("notes");});
             AddOverlay(popup,"礼物","\uE7B8",delegate{app.Open("gift");});
+            if(perchTarget!=IntPtr.Zero)AddOverlay(popup,LeavePerchText,"\uE72B",RequestPerchExit);
             if(character=="mutsumi")AddOverlay(popup,"换衣服","\uE790",delegate{QueueMenu(true);});
             popup.Items.Add(divider);
             AddOverlay(popup,"伙伴设置","\uE713",delegate{app.Open("settings");});
@@ -240,6 +245,7 @@ namespace DeskMate
             topItem.Checked = app.Data.AlwaysOnTop;
             musicItem.Checked = app.Data.SingAlongEnabled;
             outfitItem.Visible=character=="mutsumi";
+            leavePerchItem.Visible=perchTarget!=IntPtr.Zero;
             uniformItem.Checked=app.Data.MutsumiOutfit!="stage";stageItem.Checked=!uniformItem.Checked;
         }
 
@@ -250,6 +256,7 @@ namespace DeskMate
         {
             if (manuallyHidden || fullscreenHidden) { Reveal(); return; }
             manuallyHidden = true;
+            EndDesktopScene(true);
             pendingClickAt = 0;
             EndVisit();
             ForgetPerformance();
@@ -259,13 +266,14 @@ namespace DeskMate
         public void Reveal()
         {
             manuallyHidden = fullscreenHidden = false;
-            if (!IsVisible) Show();
+            if(perchTarget!=IntPtr.Zero)UpdatePerch();
+            if (!IsVisible && !perchCovered) Show();
             if (handle != IntPtr.Zero) ClampCurrent();
         }
 
         public void Sync()
         {
-            Topmost = app.Data.AlwaysOnTop;
+            Topmost = perchAligned || app.Data.AlwaysOnTop;
             var newScale = app.Data.PetScale;
             if (double.IsNaN(newScale) || double.IsInfinity(newScale)) newScale = 1;
             newScale = Math.Max(.6, Math.Min(2.0, newScale));
@@ -288,6 +296,9 @@ namespace DeskMate
             if(visitor!=null && visitor.GuestArtId!=app.CharacterArtId(visitor.Guest))EndVisit();
             if (character != wanted || currentArtId != wantedArt)
             {
+                EndDesktopScene(false);
+                ScheduleDesktopScene(true);
+                ClearWindowPerch(true);
                 EndVisit();
                 StopSongMovement();
                 if(pressing || dragging){pressing=dragging=false;sprite.ReleaseMouseCapture();}
@@ -305,7 +316,11 @@ namespace DeskMate
                 DrawFrame(Idle, 0);
                 SetTrayIcon();
             }
+#if DESKATELIER_PREVIEW
+            tray.Text = app.CharacterName + " · 窗边手记试用版";
+#else
             tray.Text = app.CharacterName + " · 桌面伙伴";
+#endif
             if (visitor != null) visitor.Layer.Topmost = Topmost;
             if (app.Data.Quiet) bubble.Visibility = Visibility.Collapsed;
             if(app.Data.Quiet){EndIndependentVisit();ForgetPerformance();}
@@ -388,6 +403,7 @@ namespace DeskMate
         private void OnPress(object sender, MouseButtonEventArgs e)
         {
             e.Handled = true;
+            EndDesktopScene(true);
             if (e.ClickCount >= 2)
             {
                 pendingClickAt = 0;
@@ -414,6 +430,9 @@ namespace DeskMate
             if (!dragging && Math.Abs(dx) + Math.Abs(dy) < 6) return;
             if (!dragging)
             {
+                ClearWindowPerch(false);
+                lastDropProbe=-1000;
+                lastDropAvailable=false;
                 EndVisit();
                 dragging=true;
                 BeginDragMotion();
@@ -422,6 +441,7 @@ namespace DeskMate
             }
             UpdateDragMotion(dx);
             Position(pressWindow.X + dx, pressWindow.Y + dy);
+            PerchBadge(TryPerchDrop(false));
         }
 
         private void OnRelease(object sender, MouseButtonEventArgs e)
@@ -430,13 +450,19 @@ namespace DeskMate
             bool moved = dragging;
             pressing = dragging = false;
             sprite.ReleaseMouseCapture();
-            if (moved)FinishDragMotion();
-            else pendingClickAt = clock.ElapsedMilliseconds + Forms.SystemInformation.DoubleClickTime;
+            if (moved)
+            {
+                PerchBadge(false);
+                if(!TryPerchDrop(true))FinishDragMotion();
+            }
+            else if(!perchAligned)pendingClickAt = clock.ElapsedMilliseconds + Forms.SystemInformation.DoubleClickTime;
             e.Handled = true;
         }
 
         private void SetEffect(int newRow, int duration)
         {
+            if(perchAligned)return;
+            EndDesktopScene(false);
             InterruptPerformance();
             row = newRow;
             shownSince = clock.ElapsedMilliseconds;
@@ -446,6 +472,7 @@ namespace DeskMate
 
         public void React(string action, string text)
         {
+            if(perchAligned)return;
             string part=action=="tea"?"tea":action=="game"?"game":action=="focus"||action=="study"||action=="work"?"focus":
                 action=="rest"?"rest":null;
             if(part=="focus")EndIndependentVisit();
@@ -478,7 +505,7 @@ namespace DeskMate
 
         private void Say(string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) return;
+            if (perchAligned || string.IsNullOrWhiteSpace(text)) return;
             words.Text = text;
             speechUntil = clock.ElapsedMilliseconds + Math.Max(3400, Math.Min(8500, 1100 + text.Length * 190L));
             bubble.Visibility = Visibility.Visible;
@@ -487,7 +514,7 @@ namespace DeskMate
         private void Tick(object sender, EventArgs e)
         {
             long now = clock.ElapsedMilliseconds;
-            if(worldTick!=0 && now-worldTick>12000){ForgetPerformance();EndVisit();RefreshRoutinePace();}
+            if(worldTick!=0 && now-worldTick>12000){EndDesktopScene(true);ForgetPerformance();EndVisit();RefreshRoutinePace();}
             worldTick=now;
             if(interrupted!=null && now-interrupted.InterruptedAt>MaxInterruption.TotalMilliseconds)
             {interrupted=null;parkedProp.Source=null;}
@@ -498,13 +525,17 @@ namespace DeskMate
                 if (hide != fullscreenHidden)
                 {
                     fullscreenHidden = hide;
-                    if (!manuallyHidden) { if (hide) { EndVisit(); Hide(); } else Show(); }
+                    if (!manuallyHidden) { if (hide) { EndDesktopScene(true); EndVisit(); Hide(); } else if(!perchCovered)Show(); }
                 }
                 if (IsVisible && !pressing) ClampCurrent();
             }
-            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null ? 34 : 80);
+            timer.Interval = TimeSpan.FromMilliseconds(!IsVisible ? 700 : visitor != null || ShowingDesktopScene ? 34 : 80);
             RefreshKaraokeOverlay();
-            if (!IsVisible) { EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            if (!IsVisible) { EndDesktopScene(true); EndVisit(); ForgetPerformance();ambientAt=now+16000; nearbySince = 0; pendingClickAt = 0; return; }
+            // The perch timer owns the sprite while seated. Ordinary idle and
+            // transient prop animations must not fight over the same image.
+            if(perchAligned)return;
+            if(AdvanceDesktopScene(now))return;
             parkedProp.Visibility=interrupted!=null && interrupted.Bridge=="guitarbridge" && (PlayingGuitarToMusic || MusicPaperGuitar)
                 ?Visibility.Hidden:Visibility.Visible;
             if(AdvanceBridge(now))return;
@@ -532,6 +563,7 @@ namespace DeskMate
                 if (!pressing && PlayingGuitarToMusic && TakeStandingGuitar("musicpickup")) return;
                 if (!pressing && AnimateKaraoke(now)) return;
                 if(ResumePerformance(now))return;
+                if(!dragging && !pressing && TryStartDesktopScene(now))return;
                 if (!MusicPlaying && now >= ambientAt && !pressing) {Ambient();if(activePoses!=null || visitor!=null)return;}
                 if (row == Idle && !pressing && TryLook(now)) return;
             }
@@ -586,7 +618,7 @@ namespace DeskMate
 
         private void ClampCurrent()
         {
-            if (handle == IntPtr.Zero) return;
+            if (handle == IntPtr.Zero || perchAligned) return;
             NativeRect r;
             if (!GetWindowRect(handle, out r)) return;
             NativeMonitor monitor = new NativeMonitor();
@@ -795,6 +827,7 @@ namespace DeskMate
         {
             if (disposed) return;
             disposed = true;
+            ClearWindowPerch(false);
             UpdateFlyoutDismissal();
             timer.Stop();
             DisposeKaraoke();

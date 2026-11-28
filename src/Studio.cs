@@ -13,8 +13,9 @@ using System.Windows.Threading;
 [assembly: AssemblyTitle("窗边手记")]
 [assembly: AssemblyProduct("窗边手记 · Desk Atelier")]
 [assembly: AssemblyDescription("离线 Windows 桌面伙伴")]
-[assembly: AssemblyVersion("1.9.0.0")]
-[assembly: AssemblyFileVersion("1.9.0.0")]
+[assembly: AssemblyVersion("1.10.11.0")]
+[assembly: AssemblyFileVersion("1.10.11.0")]
+[assembly: AssemblyInformationalVersion("1.10.11")]
 
 namespace DeskMate
 {
@@ -37,8 +38,13 @@ namespace DeskMate
         {
             try
             {
-                string data = Environment.GetEnvironmentVariable("DESKATELIER_DATA");
-                if (String.IsNullOrWhiteSpace(data)) data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeskAtelier");
+#if DESKATELIER_PREVIEW
+                string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier-WindowPreview-121");
+                Environment.SetEnvironmentVariable("DESKATELIER_DATA",data);
+#else
+                string data=Environment.GetEnvironmentVariable("DESKATELIER_DATA");
+                if(String.IsNullOrWhiteSpace(data))data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DeskAtelier");
+#endif
                 data = Path.GetFullPath(data);
                 Directory.CreateDirectory(data);
                 string channel;

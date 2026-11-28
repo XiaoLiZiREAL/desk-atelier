@@ -1,6 +1,7 @@
 """Verify every released Steve sprite against the sampled 1.8 six-cuboid model."""
 from hashlib import sha256
 import json
+from math import nextafter
 from pathlib import Path
 import sys
 
@@ -10,9 +11,12 @@ from PIL import Image
 repo=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(repo/"art/steve"))
 import render_steve as rig
-from classic_scenes import frames
+from classic_scenes import frames, input_field
 
 def check():
+    assert input_field(17.123456789) == input_field(nextafter(17.123456789, 18.0))
+    assert input_field(17.123456789) != input_field(17.123456799)
+    assert input_field(-4e-16) == input_field(0.0) == "0"
     origin=json.loads((rig.HERE/"origin.json").read_text(encoding="utf-8"))
     assert sha256((rig.HERE/"skin.png").read_bytes()).hexdigest()==origin["skin_sha256"]
     assert rig.SIZES==((8,8,8),(8,12,4),(4,12,4),(4,12,4),(4,12,4),(4,12,4))

@@ -174,6 +174,7 @@ namespace DeskMate
         }
         bool BeginPerformance(string action,bool independent)
         {
+            EndDesktopScene(true);
             var sheet=ActionFrames(character,action);
             if(sheet==null)return false;
             if(action=="quietrest"){
@@ -262,6 +263,7 @@ namespace DeskMate
         }
         internal void OpeningTool()
         {
+            EndDesktopScene(true);
             EndIndependentVisit();
             if(independentPerformance)InterruptPerformance();
         }
@@ -325,11 +327,84 @@ namespace DeskMate
                 }
             }
         }
+        long desktopSceneDue=long.MaxValue, desktopSceneSince=-1;
+        BitmapSource[] desktopScenePoses;
+        string desktopSceneArt;
+        bool ShowingDesktopScene { get { return desktopSceneSince>=0; } }
+
+        void ScheduleDesktopScene(bool first)
+        {
+            desktopSceneDue=clock.ElapsedMilliseconds+1000L*
+                WindowPerchMotion.VignetteDelaySeconds(app.Data.ActivityPace,first,random.Next(100000));
+        }
+
+        bool TryStartDesktopScene(long now)
+        {
+            long ripeBatch=0;
+            if(currentArtId=="mutsumi")
+            {
+                var project=app.Data.ProjectFor("mutsumi");
+                if(!ProjectPlantTimeline.MayShowCucumberScene(project.Stage,project.NextUtc,DateTime.UtcNow.Ticks,
+                    app.Data.CucumberFruitSceneUtc))return false;
+                ripeBatch=project.NextUtc;
+            }
+            if((ripeBatch==0 && now<desktopSceneDue) || perchTarget!=IntPtr.Zero || CompanionOccupied() || PerformingPaper ||
+                (app.FocusActive && !app.FocusPaused) || !WindowPerchMotion.Supports(currentArtId))return false;
+            if(desktopSceneArt!=currentArtId || desktopScenePoses==null)
+            {
+                desktopScenePoses=LoadWindowPerchPoses(currentArtId,PerchMode.Scene);
+                desktopSceneArt=currentArtId;
+            }
+            ScheduleDesktopScene(false);
+            if(desktopScenePoses==null)return false;
+            desktopSceneSince=now;
+            if(ripeBatch>0){app.Data.CucumberFruitSceneUtc=ripeBatch;app.Save();}
+            backpackButton.Visibility=Visibility.Collapsed;
+            parkedProp.Visibility=parkedMusicGuitar.Visibility=Visibility.Collapsed;
+            ShowPose(desktopScenePoses[0]);
+            // Let this vignette yield naturally to the rest of the usual routine.
+            ambientAt=Math.Max(ambientAt,now+WindowPerchMotion.SceneDuration(currentArtId)+1500);
+            return true;
+        }
+
+        bool AdvanceDesktopScene(long now)
+        {
+            if(!ShowingDesktopScene)return false;
+            if(perchTarget!=IntPtr.Zero || desktopSceneArt!=currentArtId || CompanionOccupied() ||
+                PerformingPaper || (app.FocusActive && !app.FocusPaused))
+            {EndDesktopScene(true);return false;}
+            if(currentArtId=="mutsumi")
+            {
+                var project=app.Data.ProjectFor("mutsumi");
+                if(!ProjectPlantTimeline.HasRipeCucumber(project.Stage,project.NextUtc,DateTime.UtcNow.Ticks))
+                {EndDesktopScene(true);return false;}
+            }
+            int index=WindowPerchMotion.DesktopFrameAt(now-desktopSceneSince,currentArtId);
+            if(index<0){EndDesktopScene(true);return false;}
+            ShowPose(desktopScenePoses[index]);
+            return true;
+        }
+
+        void EndDesktopScene(bool restore)
+        {
+            if(!ShowingDesktopScene)return;
+            desktopSceneSince=-1;
+            RefreshBagAttachment();
+            if(restore && !perchAligned && !disposed)
+            {
+                row=Idle;
+                shownSince=clock.ElapsedMilliseconds;
+                effectUntil=0;
+                DrawFrame(Idle,0);
+            }
+        }
+
         public void RefreshRoutinePace()
         {
             schedulePace=app.Data.ActivityPace??"normal";
             int first=schedulePace=="lively"?9:schedulePace=="calm"?35:16;
             ambientAt=clock.ElapsedMilliseconds+1000*random.Next(first,first+10);
+            ScheduleDesktopScene(true);
         }
         long NextAmbient()
         {

@@ -14,6 +14,8 @@ namespace DeskMate
         public PersonalProject MaidProject=new PersonalProject(), LabProject=new PersonalProject(),
             MinerProject=new PersonalProject(), GuitarProject=new PersonalProject(), CucumberProject=new PersonalProject();
 
+        public long CucumberFruitSceneUtc;
+
         internal PersonalProject ProjectFor(string role)
         {
             switch(role)

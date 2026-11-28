@@ -7,16 +7,13 @@ from pathlib import Path
 import subprocess
 import tempfile
 from zipfile import ZipFile
-from classic_scenes import frames
+from classic_scenes import frames, input_text
 
 HERE=Path(__file__).resolve().parent
 ITEMS=("paper","map_empty","map_filled","potion_bottle_drinkable","potion_overlay",
        "emerald","iron_pickaxe","iron_sword","bow_standby","bow_pulling_0","bow_pulling_1",
        "bow_pulling_2","fishing_rod_cast","fishing_rod_uncast","fish_cod_raw",
        "leather_boots","leather_boots_overlay","iron_hoe","seeds_wheat","wheat")
-
-def input_text():
-    return "".join(key+" "+" ".join(map(str,frame.inputs()))+"\n" for key,frame in frames())
 
 def sample(client,jars,jdk):
     origin=json.loads((HERE/"origin.json").read_text(encoding="utf-8"))

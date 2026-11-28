@@ -57,7 +57,7 @@ namespace DeskMate
         {
             if (backpackButton == null) return;
             int count = app.Data.Bag.Count;
-            backpackButton.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            backpackButton.Visibility = count == 0 || ShowingDesktopScene ? Visibility.Collapsed : Visibility.Visible;
             if (count > 0)
             {
                 backpackButton.ToolTip = "随身背包 · " + count + " 项";

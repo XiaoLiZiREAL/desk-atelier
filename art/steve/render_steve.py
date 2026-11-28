@@ -9,8 +9,7 @@ import math
 from functools import lru_cache
 from pathlib import Path
 from hashlib import sha256
-from classic_scenes import ACTIONS, COUNTS, action, base
-from sample_classic import input_text
+from classic_scenes import ACTIONS, COUNTS, action, base, input_text
 
 import numpy as np
 from PIL import Image, ImageDraw

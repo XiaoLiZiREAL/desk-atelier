@@ -159,8 +159,19 @@ def frames():
         for i in range(6):
             yield f"{name}.{i}",action(name,i)
 
+def input_field(value):
+    if isinstance(value, float):
+        # The Java sampler consumes single-precision values. Keep ample
+        # precision without making the cache depend on libm's last bits.
+        value = format(value, ".12f").rstrip("0").rstrip(".")
+        return "0" if value == "-0" else value
+    return str(value)
+
+def input_text():
+    return "".join(key + " " + " ".join(map(input_field, frame.inputs())) + "\n"
+                   for key, frame in frames())
+
 if __name__=="__main__":
     import sys
     from pathlib import Path
-    Path(sys.argv[1]).write_text("".join(key+" "+" ".join(map(str,f.inputs()))+"\n"
-                                          for key,f in frames()),encoding="ascii")
+    Path(sys.argv[1]).write_bytes(input_text().encode("ascii"))
